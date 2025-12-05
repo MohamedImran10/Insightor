@@ -205,3 +205,24 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# 🔐 SECRETS & CREDENTIALS (NEVER COMMIT)
+# =========================================
+backend/service-keys/
+*.json
+!backend/app/*.json
+.env
+.env.local
+*.key
+*.pem
+credentials/
+secrets/
+firebase_creds.json
+service-account-key.json
+google-credentials.json
+
+# Environment & Config
+backend/.env
+backend/.env.local
+backend/venv/
+frontend/.env
