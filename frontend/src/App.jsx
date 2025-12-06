@@ -1,260 +1,130 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import SearchInput from './components/SearchInput.jsx';
-import ResearchContainer from './components/ResearchContainer.jsx';
-import axios from 'axios';
+import Login from './pages/Login.jsx';
+import Signup from './pages/Signup.jsx';
+import ResearchApp from './pages/ResearchApp.jsx';
+import ProtectedRoute from './components/ProtectedRoute.jsx';
+import useAuth from './hooks/useAuth.js';
+import { LogOut, Menu } from 'lucide-react';
 
-const API_BASE_URL = 'http://localhost:8000';
+const AppLayout = ({ children }) => {
+  const { user, logout, loading } = useAuth();
+  const [showMenu, setShowMenu] = useState(false);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return children;
+  }
+
+  // Show header with logout for authenticated users
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
+      {/* Header */}
+      <motion.header
+        className="bg-white shadow-md sticky top-0 z-50"
+        initial={{ y: -100 }}
+        animate={{ y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+          {/* Logo */}
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">
+              Insightor
+            </h1>
+          </div>
+
+          {/* User Info */}
+          <div className="hidden md:flex items-center gap-6">
+            <div className="text-right">
+              <p className="text-sm text-gray-600">Welcome</p>
+              <p className="font-semibold text-gray-800">{user.displayName || user.email}</p>
+            </div>
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors font-semibold"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </button>
+          </div>
+
+          {/* Mobile Menu */}
+          <div className="md:hidden">
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <Menu className="w-6 h-6 text-gray-800" />
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Menu Dropdown */}
+        {showMenu && (
+          <motion.div
+            className="md:hidden bg-white border-t-2 border-gray-200 p-4 space-y-4"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <p className="text-sm text-gray-600">Signed in as</p>
+            <p className="font-semibold text-gray-800">{user.email}</p>
+            <button
+              onClick={() => {
+                logout();
+                setShowMenu(false);
+              }}
+              className="w-full flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors font-semibold"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </button>
+          </motion.div>
+        )}
+      </motion.header>
+
+      {/* Content */}
+      <div>{children}</div>
+    </div>
+  );
+};
 
 const App = () => {
-  const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState([]);
-  const [summary, setSummary] = useState('');
-  const [insights, setInsights] = useState([]);
-  const [memoryChunks, setMemoryChunks] = useState([]);
-  const [pastMemories, setPastMemories] = useState([]);
-  const [error, setError] = useState('');
-
-  const handleSearch = useCallback(async (searchQuery) => {
-    setQuery(searchQuery);
-    setLoading(true);
-    setError('');
-    setSummary('');
-    setResults([]);
-    setInsights([]);
-    setMemoryChunks([]);
-    setPastMemories([]);
-
-    try {
-      const response = await axios.post(`${API_BASE_URL}/research`, {
-        query: searchQuery,
-      });
-
-      if (response.data.status === 'success') {
-        setSummary(response.data.final_summary);
-        setResults(response.data.search_results || []);
-        setInsights(response.data.top_insights || []);
-        setMemoryChunks(response.data.relevant_memory_chunks || []);
-        setPastMemories(response.data.past_research_memories || []);
-      } else {
-        setError(response.data.error || 'Failed to complete research');
-      }
-    } catch (err) {
-      console.error('Error:', err);
-      setError(
-        err.response?.data?.detail ||
-          err.message ||
-          'Failed to connect to the research service. Make sure the backend is running on port 8000.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const handleNewSearch = useCallback(() => {
-    setQuery('');
-    setResults([]);
-    setSummary('');
-    setInsights([]);
-    setMemoryChunks([]);
-    setPastMemories([]);
-    setError('');
-  }, []);
-
-  // Page background animation
-  const pageVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: { duration: 0.6 },
-    },
-  };
 
   return (
-    <motion.div
-      className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50"
-      variants={pageVariants}
-      initial="hidden"
-      animate="visible"
-    >
-      {/* Animated Background Elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <motion.div
-          className="absolute top-20 left-10 w-72 h-72 bg-blue-300 rounded-full mix-blend-multiply filter blur-3xl opacity-20"
-          animate={{
-            x: [0, 20, 0],
-            y: [0, -20, 0],
-          }}
-          transition={{
-            duration: 8,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
+    <Router>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+
+        {/* Protected Routes */}
+        <Route
+          path="/"
+          element={
+            <AppLayout>
+              <ProtectedRoute>
+                <ResearchApp />
+              </ProtectedRoute>
+            </AppLayout>
+          }
         />
-        <motion.div
-          className="absolute top-40 right-10 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-20"
-          animate={{
-            x: [0, -20, 0],
-            y: [0, 20, 0],
-          }}
-          transition={{
-            duration: 10,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
-        />
-        <motion.div
-          className="absolute bottom-10 left-1/2 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-20"
-          animate={{
-            x: [0, 20, 0],
-            y: [0, 20, 0],
-          }}
-          transition={{
-            duration: 12,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
-        />
-      </div>
 
-      {/* Main Content */}
-      <div className="relative z-10 min-h-screen flex flex-col">
-        {/* Header Section */}
-        <motion.div
-          className="flex-1 flex flex-col items-center justify-center pt-8 md:pt-16 pb-8 md:pb-16 px-4"
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-        >
-          {/* Logo and Title */}
-          <motion.div
-            className="text-center mb-8"
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-          >
-            <motion.div
-              className="inline-flex items-center gap-3 mb-4"
-              whileHover={{ scale: 1.05 }}
-            >
-              <motion.div
-                className="w-12 h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white text-2xl font-bold"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
-              >
-                🔍
-              </motion.div>
-              <h1 className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600">
-                Insightor
-              </h1>
-            </motion.div>
-            <p className="text-gray-600 text-lg md:text-xl font-medium">
-              Your AI-Powered Research Assistant
-            </p>
-            <p className="text-gray-500 text-sm md:text-base mt-2">
-              Search, analyze, and summarize information in seconds using advanced AI
-            </p>
-          </motion.div>
-
-          {/* Search Input */}
-          <SearchInput onSubmit={handleSearch} loading={loading} />
-
-          {/* Feature Highlights */}
-          {!summary && !loading && (
-            <motion.div
-              className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.6 }}
-            >
-              {[
-                {
-                  icon: '🔍',
-                  title: 'Web Search',
-                  desc: 'Find the most relevant information from across the web',
-                },
-                {
-                  icon: '📖',
-                  title: 'Content Analysis',
-                  desc: 'Extract and clean content from multiple sources',
-                },
-                {
-                  icon: '🧠',
-                  title: 'AI Insights',
-                  desc: 'Get intelligent summaries powered by Gemini',
-                },
-              ].map((feature, index) => (
-                <motion.div
-                  key={index}
-                  className="p-4 bg-white rounded-lg border-2 border-gray-200 shadow-md hover:shadow-lg transition-shadow"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.6 + index * 0.1 }}
-                  whileHover={{ translateY: -5 }}
-                >
-                  <div className="text-3xl mb-2">{feature.icon}</div>
-                  <h3 className="font-bold text-gray-800 mb-1">{feature.title}</h3>
-                  <p className="text-sm text-gray-600">{feature.desc}</p>
-                </motion.div>
-              ))}
-            </motion.div>
-          )}
-        </motion.div>
-
-        {/* Results Section */}
-        {(summary || loading || error) && (
-          <div className="flex-1 pb-8">
-            {error && (
-              <motion.div
-                className="max-w-6xl mx-auto px-4 py-8"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-              >
-                <div className="p-6 bg-red-50 border-2 border-red-300 rounded-lg text-red-700 font-semibold text-center">
-                  ❌ {error}
-                </div>
-                <motion.div className="mt-6 flex justify-center">
-                  <motion.button
-                    onClick={handleNewSearch}
-                    className="px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold rounded-lg shadow-lg hover:shadow-xl transition-all"
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    🔄 Try Again
-                  </motion.button>
-                </motion.div>
-              </motion.div>
-            )}
-
-            {!error && (
-              <ResearchContainer
-                query={query}
-                loading={loading}
-                results={results}
-                summary={summary}
-                insights={insights}
-                memoryChunks={memoryChunks}
-                pastMemories={pastMemories}
-                onNewSearch={handleNewSearch}
-              />
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Footer */}
-      <motion.footer
-        className="relative z-10 py-6 text-center text-gray-600 border-t border-gray-200 bg-white/50 backdrop-blur"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.8 }}
-      >
-        <p className="text-sm">
-          Powered by Tavily Search API, Trafilatura, and Google Gemini 2.5 Flash
-        </p>
-      </motion.footer>
-    </motion.div>
+        {/* Catch all */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Router>
   );
 };
 

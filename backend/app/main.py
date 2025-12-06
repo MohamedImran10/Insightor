@@ -30,6 +30,8 @@ from app.agents.followup_agent import FollowupAgent
 from app.agents.citation_extractor import CitationExtractor
 from app.agents.topic_graph_agent import TopicGraphAgent
 from app.auth import FirebaseAuth, initialize_firebase, get_firebase_auth
+from app.auth_middleware import initialize_auth_middleware
+from app.dependencies import get_current_user, get_user_id
 
 # Configure logging
 logging.basicConfig(
@@ -57,6 +59,11 @@ async def lifespan(app: FastAPI):
     global orchestrator, qdrant_memory, followup_agent, citation_extractor, topic_graph_agent, firebase_auth
     try:
         logger.info("🚀 Initializing Phase 3 Research System...")
+        
+        # Initialize Auth Middleware
+        logger.info("🔐 Initializing Firebase Auth Middleware...")
+        initialize_auth_middleware(firebase_enabled=settings.firebase_enabled)
+        logger.info("✅ Auth middleware initialized")
         
         # Initialize Orchestrator
         logger.info("📡 Initializing Research Orchestrator...")
@@ -143,6 +150,49 @@ async def root():
     }
 
 
+# ============================================
+# AUTHENTICATION ENDPOINTS
+# ============================================
+
+@app.post("/auth/verify", tags=["Auth"])
+async def verify_token(user: dict = Depends(get_current_user)):
+    """
+    Verify Firebase ID token
+    
+    Args:
+        user: Current authenticated user
+    
+    Returns:
+        User information (uid, email, name, etc.)
+    """
+    return {
+        "status": "authenticated",
+        "uid": user.get("uid"),
+        "email": user.get("email"),
+        "name": user.get("name"),
+        "email_verified": user.get("email_verified"),
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+@app.post("/auth/logout", tags=["Auth"])
+async def logout(user: dict = Depends(get_current_user)):
+    """
+    Logout endpoint (client should clear token from localStorage)
+    
+    Args:
+        user: Current authenticated user
+    
+    Returns:
+        Logout confirmation
+    """
+    logger.info(f"👋 User {user.get('uid')} logged out")
+    return {
+        "status": "logged_out",
+        "message": "Please clear the authentication token from your client"
+    }
+
+
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
     """
@@ -166,9 +216,12 @@ async def health_check():
 
 
 @app.post("/research", response_model=ResearchResponse, tags=["Research"])
-async def research(request: ResearchRequest):
+async def research(
+    request: ResearchRequest,
+    user: dict = Depends(get_current_user)
+):
     """
-    Main research endpoint
+    Main research endpoint (REQUIRES AUTHENTICATION)
     
     Executes the full pipeline:
     1. Search Agent → Tavily Search API
@@ -177,13 +230,17 @@ async def research(request: ResearchRequest):
     
     Args:
         request: ResearchRequest with query field
+        user: Authenticated user from Firebase token
         
     Returns:
         ResearchResponse with results and summary
         
     Raises:
-        HTTPException: If research fails
+        HTTPException: If research fails or not authenticated
     """
+    user_id = user.get("uid")
+    user_email = user.get("email")
+    logger.info(f"📥 Research request from {user_email} ({user_id[:8]}...): {request.query}")
     try:
         if not request.query or len(request.query.strip()) == 0:
             raise HTTPException(
