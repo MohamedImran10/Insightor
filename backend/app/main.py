@@ -12,6 +12,7 @@ import random
 import time
 
 from fastapi import FastAPI, HTTPException, status, Depends
+from firebase_admin import firestore
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
@@ -32,6 +33,7 @@ from app.agents.topic_graph_agent import TopicGraphAgent
 from app.auth import FirebaseAuth, initialize_firebase, get_firebase_auth
 from app.auth_middleware import initialize_auth_middleware
 from app.dependencies import get_current_user, get_user_id
+from app.firestore_history import get_history_manager
 
 # Configure logging
 logging.basicConfig(
@@ -261,6 +263,34 @@ async def research(
             )
         
         logger.info(f"✅ Research completed successfully")
+        
+        # Auto-save to history (fire and forget)
+        try:
+            history_manager = get_history_manager()
+            if history_manager:
+                # Extract relevant data from result
+                sources = result.get("sources", [])
+                response_text = result.get("summary", "")
+                search_results = result.get("search_results", [])
+                insights = result.get("insights", [])
+                memory_chunks = result.get("memory_chunks", [])
+                
+                # Save asynchronously in background
+                import asyncio
+                asyncio.create_task(history_manager.save_search_history(
+                    user_id=user_id,
+                    query=request.query,
+                    response=response_text,
+                    sources=sources,
+                    search_results=search_results,
+                    insights=insights,
+                    memory_chunks=memory_chunks
+                ))
+                logger.info(f"💾 Queued history save for user {user_id[:8]}")
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to queue history save: {str(e)}")
+            # Don't fail the request if history save fails
+        
         return result
         
     except HTTPException:
@@ -614,6 +644,266 @@ async def get_topic_graph(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch topic graph: {str(e)}"
+        )
+
+
+# ============================================
+# SEARCH HISTORY ENDPOINTS
+# ============================================
+
+@app.post("/history/save", tags=["History"])
+async def save_search_history(
+    query: str,
+    response: str,
+    sources: list = None,
+    search_results: list = None,
+    insights: list = None,
+    memory_chunks: list = None,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Save a search query and response to user's history
+    
+    Args:
+        query: The search query
+        response: The research response/summary
+        sources: List of source documents used
+        search_results: Search results from Tavily
+        insights: Extracted insights
+        memory_chunks: Related memory chunks
+        user: Authenticated user
+        
+    Returns:
+        Status confirmation
+    """
+    user_id = user.get("uid")
+    logger.info(f"💾 Saving search history for user {user_id[:8]}: {query[:50]}...")
+    
+    try:
+        history_manager = get_history_manager()
+        if not history_manager:
+            logger.warning("⚠️  History manager not available")
+            return {
+                "status": "warning",
+                "message": "History manager not available",
+                "saved": False
+            }
+        
+        success = await history_manager.save_search_history(
+            user_id=user_id,
+            query=query,
+            response=response,
+            sources=sources or [],
+            search_results=search_results,
+            insights=insights,
+            memory_chunks=memory_chunks
+        )
+        
+        if success:
+            logger.info(f"✅ History saved for user {user_id[:8]}")
+            return {
+                "status": "success",
+                "message": "History saved successfully",
+                "saved": True
+            }
+        else:
+            logger.warning(f"⚠️  Failed to save history for user {user_id[:8]}")
+            return {
+                "status": "error",
+                "message": "Failed to save history",
+                "saved": False
+            }
+    
+    except Exception as e:
+        logger.error(f"❌ Error saving history: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save history: {str(e)}"
+        )
+
+
+@app.get("/history/{user_id}", tags=["History"])
+async def get_search_history(
+    user_id: str,
+    limit: int = 50,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get search history for a user
+    
+    Args:
+        user_id: User ID to fetch history for
+        limit: Maximum number of entries to return
+        current_user: Authenticated user (must match user_id for security)
+        
+    Returns:
+        List of history entries
+    """
+    # Security: Users can only view their own history
+    current_user_id = current_user.get("uid")
+    if current_user_id != user_id:
+        logger.warning(f"❌ Unauthorized history access attempt: {current_user_id[:8]} tried to access {user_id[:8]}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view your own search history"
+        )
+    
+    logger.info(f"📖 Fetching search history for user {user_id[:8]}")
+    
+    try:
+        history_manager = get_history_manager()
+        if not history_manager:
+            logger.warning("⚠️  History manager not available")
+            return {
+                "status": "warning",
+                "message": "History manager not available",
+                "history": []
+            }
+        
+        history = await history_manager.get_search_history(user_id, limit)
+        
+        logger.info(f"✅ Retrieved {len(history)} history entries for user {user_id[:8]}")
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "count": len(history),
+            "history": history
+        }
+    
+    except Exception as e:
+        logger.error(f"❌ Error fetching history: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch history: {str(e)}"
+        )
+
+
+@app.post("/setup/firestore", tags=["Setup"])
+async def setup_firestore():
+    """
+    Initialize Firestore database manually
+    This endpoint can be called to test and initialize Firestore
+    """
+    try:
+        history_manager = get_history_manager()
+        if not history_manager:
+            return {
+                "status": "error",
+                "message": "History manager not available - check Firebase credentials"
+            }
+        
+        if not history_manager.db:
+            return {
+                "status": "error", 
+                "message": "Firestore database not initialized. Please create database in Firebase Console first.",
+                "instructions": [
+                    "1. Go to: https://console.firebase.google.com/project/research-agent-b7cb0/firestore",
+                    "2. Click 'Create database'",
+                    "3. Choose 'Start in test mode'", 
+                    "4. Select a location (us-central1 recommended)",
+                    "5. Try this endpoint again"
+                ]
+            }
+        
+        # Test database by creating a sample document
+        test_doc = history_manager.db.collection('_setup').document('test')
+        test_doc.set({
+            'setup_time': firestore.SERVER_TIMESTAMP,
+            'message': 'Firestore successfully initialized!'
+        })
+        
+        # Clean up test document
+        test_doc.delete()
+        
+        logger.info("✅ Firestore database setup successful")
+        return {
+            "status": "success",
+            "message": "Firestore database is working correctly!",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Firestore setup failed: {e}")
+        error_msg = str(e)
+        
+        if "does not exist" in error_msg.lower():
+            return {
+                "status": "error",
+                "message": "Firestore database does not exist",
+                "error": error_msg,
+                "instructions": [
+                    "Please create the Firestore database manually:",
+                    "1. Go to: https://console.firebase.google.com/project/research-agent-b7cb0/firestore", 
+                    "2. Click 'Create database'",
+                    "3. Choose 'Start in test mode'",
+                    "4. Select a location (us-central1 recommended)"
+                ]
+            }
+        
+        return {
+            "status": "error",
+            "message": f"Firestore setup failed: {error_msg}",
+            "error": error_msg
+        }
+
+
+@app.delete("/history/{user_id}/{entry_id}", tags=["History"])
+async def delete_history_entry(
+    user_id: str,
+    entry_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete a specific history entry
+    
+    Args:
+        user_id: User ID
+        entry_id: History entry ID to delete
+        current_user: Authenticated user (must match user_id)
+        
+    Returns:
+        Deletion status
+    """
+    # Security: Users can only delete their own history
+    current_user_id = current_user.get("uid")
+    if current_user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own history"
+        )
+    
+    logger.info(f"🗑️  Deleting history entry {entry_id} for user {user_id[:8]}")
+    
+    try:
+        history_manager = get_history_manager()
+        if not history_manager:
+            return {
+                "status": "warning",
+                "message": "History manager not available",
+                "deleted": False
+            }
+        
+        success = await history_manager.delete_history_entry(user_id, entry_id)
+        
+        if success:
+            logger.info(f"✅ Deleted history entry {entry_id}")
+            return {
+                "status": "success",
+                "message": "History entry deleted",
+                "deleted": True
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Failed to delete history entry",
+                "deleted": False
+            }
+    
+    except Exception as e:
+        logger.error(f"❌ Error deleting history: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete history: {str(e)}"
         )
 
 

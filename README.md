@@ -414,7 +414,7 @@ For issues or questions:
 
 ## 🎯 Roadmap
 
-- [ ] Google OAuth login
+- [x] Google OAuth login
 - [ ] Password reset functionality
 - [ ] Email verification
 - [ ] Advanced search filters

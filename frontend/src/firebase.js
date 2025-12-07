@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { firebaseConfig } from "./config";
 
 console.log("🔍 Firebase Config from config.js:", firebaseConfig);
@@ -48,6 +48,9 @@ try {
     _isMock: true
   };
 }
+
+// Export Google Auth Provider
+export const googleProvider = new GoogleAuthProvider();
 
 export { auth };
 export default app;

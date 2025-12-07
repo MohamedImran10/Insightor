@@ -1,0 +1,197 @@
+"""
+Firestore integration for storing user search history
+"""
+import firebase_admin
+from firebase_admin import firestore
+from datetime import datetime
+from typing import Optional, List, Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
+
+class FirestoreHistoryManager:
+    """Manages user search history in Firestore"""
+    
+    def __init__(self):
+        try:
+            # Initialize Firestore client
+            self.db = firestore.client()
+            logger.info("✅ Firestore client initialized")
+            
+            # Test connection and create database if needed
+            self._test_connection()
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Firestore: {e}")
+            logger.warning("⚠️  Firestore database may not exist. Please create it in Firebase Console:")
+            logger.warning("   https://console.firebase.google.com/project/research-agent-b7cb0/firestore")
+            self.db = None
+    
+    def _test_connection(self):
+        """Test Firestore connection and create initial structure if needed"""
+        try:
+            # Try to create a test collection to verify database exists
+            test_doc = self.db.collection('_test').document('connection')
+            test_doc.set({'created': datetime.now(), 'status': 'active'})
+            logger.info("✅ Firestore database connection verified")
+            
+            # Create initial collections structure
+            self._initialize_collections()
+            
+            # Clean up test document
+            test_doc.delete()
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "does not exist" in error_msg or "database" in error_msg:
+                logger.error("❌ Firestore database does not exist!")
+                logger.warning("🔧 To fix this issue:")
+                logger.warning("   1. Go to: https://console.firebase.google.com/project/research-agent-b7cb0/firestore")
+                logger.warning("   2. Click 'Create database'")
+                logger.warning("   3. Choose 'Start in test mode'")
+                logger.warning("   4. Select a location (us-central1 recommended)")
+                logger.warning("   5. Restart the backend server")
+            else:
+                logger.error(f"❌ Firestore database test failed: {e}")
+            # Don't raise here - let the app continue without Firestore
+            pass
+    
+    def _initialize_collections(self):
+        """Initialize basic collection structure"""
+        try:
+            # Create a sample user document to initialize the structure
+            sample_doc = self.db.collection('users').document('_sample').collection('search_history').document('_init')
+            sample_doc.set({
+                'query': 'Welcome to Insightor!',
+                'response': 'This is a sample search history entry.',
+                'sources': [],
+                'timestamp': datetime.utcnow(),
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'is_sample': True
+            })
+            logger.info("✅ Initialized Firestore collections structure")
+        except Exception as e:
+            logger.warning(f"⚠️  Could not initialize collections: {e}")
+            pass
+    
+    async def save_search_history(
+        self, 
+        user_id: str, 
+        query: str, 
+        response: str, 
+        sources: List[Dict[str, Any]],
+        search_results: Optional[List[Dict]] = None,
+        insights: Optional[List[str]] = None,
+        memory_chunks: Optional[List[Dict]] = None
+    ) -> bool:
+        """
+        Save a search query and response to Firestore
+        
+        Structure:
+        users/{uid}/search_history/{entry_id}
+        """
+        if not self.db or not user_id:
+            logger.warning(f"⚠️ Cannot save history: db={bool(self.db)}, user_id={user_id}")
+            return False
+        
+        try:
+            # Create history entry
+            history_entry = {
+                "query": query,
+                "response": response,
+                "sources": sources,
+                "search_results": search_results or [],
+                "insights": insights or [],
+                "memory_chunks": memory_chunks or [],
+                "timestamp": datetime.utcnow(),
+                "created_at": firestore.SERVER_TIMESTAMP
+            }
+            
+            # Save to Firestore
+            user_history_ref = self.db.collection("users").document(user_id).collection("search_history")
+            doc_ref = user_history_ref.add(history_entry)
+            
+            logger.info(f"✅ Saved search history for user {user_id[:8]}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to save search history: {e}")
+            return False
+    
+    async def get_search_history(
+        self, 
+        user_id: str, 
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Get user's search history from Firestore
+        
+        Returns entries in reverse chronological order
+        """
+        if not self.db or not user_id:
+            logger.warning(f"⚠️ Cannot retrieve history: db={bool(self.db)}, user_id={user_id}")
+            return []
+        
+        try:
+            # Query history collection, ordered by timestamp descending
+            user_history_ref = self.db.collection("users").document(user_id).collection("search_history")
+            docs = user_history_ref.order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit).stream()
+            
+            history = []
+            for doc in docs:
+                entry = doc.to_dict()
+                entry["id"] = doc.id  # Include document ID
+                history.append(entry)
+            
+            logger.info(f"✅ Retrieved {len(history)} history entries for user {user_id[:8]}")
+            return history
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to retrieve search history: {e}")
+            return []
+    
+    async def delete_history_entry(
+        self, 
+        user_id: str, 
+        entry_id: str
+    ) -> bool:
+        """Delete a specific history entry"""
+        if not self.db or not user_id or not entry_id:
+            return False
+        
+        try:
+            self.db.collection("users").document(user_id).collection("search_history").document(entry_id).delete()
+            logger.info(f"✅ Deleted history entry {entry_id} for user {user_id[:8]}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to delete history entry: {e}")
+            return False
+    
+    async def clear_all_history(self, user_id: str) -> bool:
+        """Clear all history for a user"""
+        if not self.db or not user_id:
+            return False
+        
+        try:
+            user_history_ref = self.db.collection("users").document(user_id).collection("search_history")
+            docs = user_history_ref.stream()
+            
+            for doc in docs:
+                doc.reference.delete()
+            
+            logger.info(f"✅ Cleared all history for user {user_id[:8]}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to clear history: {e}")
+            return False
+
+
+# Global instance
+history_manager: Optional[FirestoreHistoryManager] = None
+
+def get_history_manager() -> Optional[FirestoreHistoryManager]:
+    """Get the global history manager instance"""
+    global history_manager
+    if history_manager is None:
+        history_manager = FirestoreHistoryManager()
+    return history_manager

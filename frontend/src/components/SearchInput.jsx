@@ -1,21 +1,27 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Send, Sparkles, Loader } from 'lucide-react';
+import { useToast } from '../hooks/useToast';
 
 const SearchInput = ({ onSubmit, loading }) => {
   const [query, setQuery] = useState('');
   const inputRef = useRef(null);
+  const { warning } = useToast();
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (query.trim() && !loading) {
+    if (!query.trim()) {
+      warning('Please enter a search query to begin your research');
+      return;
+    }
+    if (!loading) {
       onSubmit(query);
       setQuery('');
     }
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !loading) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       handleSubmit(e);
     }
   };
@@ -124,8 +130,8 @@ const SearchInput = ({ onSubmit, loading }) => {
               </motion.div>
             ) : (
               <>
-                <Send className="w-5 h-5" />
-                <span className="hidden sm:inline">Search</span>
+                <Send className="w-4 h-4" />
+                <span className="hidden sm:inline text-sm">Search</span>
               </>
             )}
           </motion.button>
@@ -134,7 +140,7 @@ const SearchInput = ({ onSubmit, loading }) => {
         {/* Suggestion Chips */}
         {!query && !loading && (
           <motion.div
-            className="mt-6 flex flex-wrap gap-2 justify-center"
+            className="mt-3 flex flex-wrap gap-2 justify-center"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}

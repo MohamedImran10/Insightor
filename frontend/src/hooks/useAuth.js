@@ -20,10 +20,24 @@ const useAuth = () => {
 
   useEffect(() => {
     try {
+      // Check if auth object is a mock (Firebase failed to initialize)
+      if (auth._isMock) {
+        console.warn('⚠️ Using mock auth - Firebase not initialized properly');
+        setLoading(false);
+        return;
+      }
+
+      // Set a timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        console.warn('⚠️ Auth state check timed out - proceeding without auth');
+        setLoading(false);
+      }, 5000);
+
       // Listen to auth state changes
       const unsubscribe = onAuthStateChanged(
         auth,
         async (currentUser) => {
+          clearTimeout(timeoutId);
           try {
             if (currentUser) {
               // User is logged in
@@ -55,14 +69,18 @@ const useAuth = () => {
           }
         },
         (err) => {
+          clearTimeout(timeoutId);
           console.error('Auth listener error:', err);
           setError(err.message);
           setLoading(false);
         }
       );
 
-      // Cleanup subscription
-      return () => unsubscribe();
+      // Cleanup subscription and timeout
+      return () => {
+        unsubscribe();
+        clearTimeout(timeoutId);
+      };
     } catch (err) {
       console.error('useAuth initialization error:', err);
       setError(err.message);
