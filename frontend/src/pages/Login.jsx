@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { signInWithEmailAndPassword, signInWithPopup, sendPasswordResetEmail, fetchSignInMethodsForEmail } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithPopup, sendPasswordResetEmail, fetchSignInMethodsForEmail, getAdditionalUserInfo } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
 import { motion } from 'framer-motion';
 import { LogIn, Loader, Eye, EyeOff } from 'lucide-react';
@@ -15,6 +15,22 @@ const Login = () => {
 
   const navigate = useNavigate();
   const { success, error: showError } = useToast();
+
+  // Force light mode on auth pages
+  useEffect(() => {
+    const wasDark = document.documentElement.classList.contains('dark');
+    document.documentElement.classList.remove('dark');
+    document.body.classList.remove('dark');
+    
+    return () => {
+      // Restore dark mode when leaving if it was enabled
+      const savedDarkMode = localStorage.getItem('darkMode');
+      if (savedDarkMode === 'true') {
+        document.documentElement.classList.add('dark');
+        document.body.classList.add('dark');
+      }
+    };
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -88,6 +104,10 @@ const Login = () => {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
+      
+      // Check if this is a new user or existing user
+      const additionalUserInfo = getAdditionalUserInfo(result);
+      const isNewUser = additionalUserInfo?.isNewUser;
 
       // Get ID token
       const idToken = await user.getIdToken();
@@ -97,8 +117,14 @@ const Login = () => {
       localStorage.setItem('user_id', user.uid);
       localStorage.setItem('user_email', user.email);
 
-      console.log('✅ Google Sign-In successful:', user.email);
-      success(`Welcome back, ${user.displayName || user.email}!`);
+      console.log('✅ Google Sign-In successful:', user.email, isNewUser ? '(new user)' : '(existing user)');
+      
+      // Show different message for new vs existing users
+      if (isNewUser) {
+        success(`Welcome to Insightor, ${user.displayName || user.email}! Your account has been created.`);
+      } else {
+        success(`Welcome back, ${user.displayName || user.email}!`);
+      }
 
       // Redirect to home
       navigate('/');

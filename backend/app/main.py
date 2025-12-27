@@ -269,11 +269,10 @@ async def research(
             history_manager = get_history_manager()
             if history_manager:
                 # Extract relevant data from result
-                sources = result.get("sources", [])
-                response_text = result.get("summary", "")
                 search_results = result.get("search_results", [])
-                insights = result.get("insights", [])
-                memory_chunks = result.get("memory_chunks", [])
+                response_text = result.get("final_summary", "")
+                insights = result.get("top_insights", [])
+                memory_chunks = result.get("relevant_memory_chunks", [])
                 
                 # Save asynchronously in background
                 import asyncio
@@ -281,7 +280,7 @@ async def research(
                     user_id=user_id,
                     query=request.query,
                     response=response_text,
-                    sources=sources,
+                    sources=search_results,  # Use search_results as sources
                     search_results=search_results,
                     insights=insights,
                     memory_chunks=memory_chunks

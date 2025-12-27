@@ -15,4 +15,4 @@ chromadb
 numpy
 qdrant-client[fastembed]
 firebase-admin
-python-multipart
+python-multipartgoogle-cloud-firestore>=2.22.0

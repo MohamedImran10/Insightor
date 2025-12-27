@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { createUserWithEmailAndPassword, updateProfile, signInWithPopup, getAdditionalUserInfo } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
@@ -18,6 +18,20 @@ const Signup = () => {
   const navigate = useNavigate();
   const { success, error: showError } = useToast();
 
+  // Force light mode on auth pages
+  useEffect(() => {
+    document.documentElement.classList.remove('dark');
+    document.body.classList.remove('dark');
+    
+    return () => {
+      // Restore dark mode when leaving if it was enabled
+      const savedDarkMode = localStorage.getItem('darkMode');
+      if (savedDarkMode === 'true') {
+        document.documentElement.classList.add('dark');
+        document.body.classList.add('dark');
+      }
+    };
+  }, []);
   const handleSignup = async (e) => {
     e.preventDefault();
 

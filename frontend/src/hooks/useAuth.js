@@ -47,6 +47,11 @@ const useAuth = () => {
                 email: currentUser.email,
                 displayName: currentUser.displayName,
                 emailVerified: currentUser.emailVerified,
+                photoURL: currentUser.photoURL,
+                metadata: {
+                  creationTime: currentUser.metadata?.creationTime,
+                  lastSignInTime: currentUser.metadata?.lastSignInTime,
+                },
                 idToken,
               });
               
@@ -112,3 +117,4 @@ const useAuth = () => {
 };
 
 export default useAuth;
+export { useAuth };

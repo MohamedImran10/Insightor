@@ -3,27 +3,39 @@ Firestore integration for storing user search history
 """
 import firebase_admin
 from firebase_admin import firestore
+from google.cloud.firestore_v1 import Client
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Database name - use your custom database name
+FIRESTORE_DATABASE = "insightordb"
+
 class FirestoreHistoryManager:
     """Manages user search history in Firestore"""
     
     def __init__(self):
         try:
-            # Initialize Firestore client
-            self.db = firestore.client()
-            logger.info("✅ Firestore client initialized")
+            # Initialize Firestore client with specific database
+            # Get the default app credentials
+            app = firebase_admin.get_app()
+            
+            # Create Firestore client with the named database
+            self.db = Client(
+                project=app.project_id,
+                credentials=app.credential.get_credential(),
+                database=FIRESTORE_DATABASE
+            )
+            logger.info(f"✅ Firestore client initialized with database: {FIRESTORE_DATABASE}")
             
             # Test connection and create database if needed
             self._test_connection()
             
         except Exception as e:
             logger.error(f"❌ Failed to initialize Firestore: {e}")
-            logger.warning("⚠️  Firestore database may not exist. Please create it in Firebase Console:")
+            logger.warning(f"⚠️  Firestore database '{FIRESTORE_DATABASE}' may not exist. Please verify in Firebase Console:")
             logger.warning("   https://console.firebase.google.com/project/research-agent-b7cb0/firestore")
             self.db = None
     
@@ -44,13 +56,10 @@ class FirestoreHistoryManager:
         except Exception as e:
             error_msg = str(e).lower()
             if "does not exist" in error_msg or "database" in error_msg:
-                logger.error("❌ Firestore database does not exist!")
-                logger.warning("🔧 To fix this issue:")
-                logger.warning("   1. Go to: https://console.firebase.google.com/project/research-agent-b7cb0/firestore")
-                logger.warning("   2. Click 'Create database'")
-                logger.warning("   3. Choose 'Start in test mode'")
-                logger.warning("   4. Select a location (us-central1 recommended)")
-                logger.warning("   5. Restart the backend server")
+                logger.error(f"❌ Firestore database '{FIRESTORE_DATABASE}' connection failed!")
+                logger.warning("🔧 To fix this issue, verify the database name matches:")
+                logger.warning(f"   Current database name: {FIRESTORE_DATABASE}")
+                logger.warning("   Check: https://console.firebase.google.com/project/research-agent-b7cb0/firestore")
             else:
                 logger.error(f"❌ Firestore database test failed: {e}")
             # Don't raise here - let the app continue without Firestore

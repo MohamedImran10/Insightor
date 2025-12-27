@@ -96,7 +96,7 @@ const SearchInput = ({ onSubmit, loading }) => {
               onKeyDown={handleKeyDown}
               placeholder={placeholders[placeholderIndex]}
               disabled={loading}
-              className="w-full px-6 py-4 text-lg bg-white border-2 border-gray-300 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-6 py-4 text-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-white border-2 border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500"
               initial={{ borderColor: '#d1d5db' }}
               animate={{
                 borderColor: loading ? '#ef4444' : '#d1d5db',
@@ -150,7 +150,7 @@ const SearchInput = ({ onSubmit, loading }) => {
                 key={chip}
                 type="button"
                 onClick={() => setQuery(chip)}
-                className="px-4 py-2 bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-700 rounded-full text-sm font-medium transition-colors"
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-gray-700 dark:text-gray-300 hover:text-blue-700 dark:hover:text-blue-300 rounded-full text-sm font-medium transition-colors"
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.4 + index * 0.05 }}
@@ -166,7 +166,7 @@ const SearchInput = ({ onSubmit, loading }) => {
         {/* Loading Message */}
         {loading && (
           <motion.div
-            className="mt-4 text-center text-gray-600 flex items-center justify-center gap-2"
+            className="mt-4 text-center text-gray-600 dark:text-gray-300 flex items-center justify-center gap-2"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
           >
@@ -174,7 +174,7 @@ const SearchInput = ({ onSubmit, loading }) => {
               animate={{ rotate: 360 }}
               transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
             >
-              <Sparkles className="w-4 h-4 text-blue-600" />
+              <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             </motion.div>
             <span>Researching your query...</span>
           </motion.div>
