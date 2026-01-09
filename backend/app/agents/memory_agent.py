@@ -1,37 +1,55 @@
 """
 MemoryAgent - Handles text chunking, embedding, and persistent memory operations
-Responsible for storing and retrieving research content from ChromaDB
+Responsible for storing and retrieving research content from Pinecone, Weaviate (or ChromaDB fallback)
+Supports ChromaDB (local), Weaviate, and Pinecone (production) backends
 """
 
 import logging
+import os
 from typing import List, Dict, Any, Optional
 import uuid
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# Determine which backend to use based on environment
+USE_PINECONE = os.getenv('USE_PINECONE', 'false').lower() == 'true'
+USE_WEAVIATE = os.getenv('USE_WEAVIATE', 'false').lower() == 'true'
+
 
 class MemoryAgent:
     """
     Manages chunking, embedding, and retrieval of research content
-    Interfaces with ChromaDB for persistent memory storage
+    Interfaces with Pinecone, Weaviate (production) or ChromaDB (development) for persistent memory storage
     """
     
-    def __init__(self, embedder, chroma_memory, chunk_size: int = 1000, overlap: int = 100):
+    def __init__(self, embedder, vector_memory, chunk_size: int = 1000, overlap: int = 100):
         """
         Initialize MemoryAgent
         
         Args:
-            embedder: EmbeddingGenerator instance for encoding text
-            chroma_memory: ChromaMemory instance for database operations
+            embedder: EmbeddingGenerator instance for encoding text (or None if using Pinecone internal embeddings)
+            vector_memory: PineconeMemory, WeaviateMemory or ChromaMemory instance for database operations
             chunk_size: Size of text chunks (default: 1000 chars)
             overlap: Overlap between chunks for context preservation (default: 100 chars)
         """
         self.embedder = embedder
-        self.chroma_memory = chroma_memory
+        self.vector_memory = vector_memory
+        # Keep chroma_memory alias for backward compatibility
+        self.chroma_memory = vector_memory
         self.chunk_size = chunk_size
         self.overlap = overlap
-        logger.info(f"🧠 MemoryAgent initialized (chunk_size={chunk_size}, overlap={overlap})")
+        
+        # Determine backend type
+        if USE_PINECONE:
+            backend = "Pinecone"
+        elif USE_WEAVIATE:
+            backend = "Weaviate"
+        else:
+            backend = "ChromaDB"
+            
+        logger.info(f"🧠 MemoryAgent initialized with {backend} (chunk_size={chunk_size}, overlap={overlap})")
+
     
     def chunk_text(self, text: str) -> List[str]:
         """
@@ -65,9 +83,13 @@ class MemoryAgent:
             text: Text to embed
             
         Returns:
-            Embedding vector
+            Embedding vector (None if using Pinecone which handles embeddings internally)
         """
         try:
+            # Skip embedding if using Pinecone (handles embeddings internally)
+            if USE_PINECONE:
+                return None
+            
             embedding = self.embedder.encode(text)
             return embedding
         except Exception as e:
@@ -82,11 +104,15 @@ class MemoryAgent:
             chunks: List of text chunks
             
         Returns:
-            List of embedding vectors
+            List of embedding vectors (None if using Pinecone which handles embeddings internally)
         """
         try:
             if not chunks:
                 return []
+            
+            # Skip embedding if using Pinecone (handles embeddings internally)
+            if USE_PINECONE:
+                return None
             
             embeddings = self.embedder.embed_chunks(chunks)
             logger.info(f"🔢 Embedded {len(chunks)} chunks")
@@ -142,9 +168,9 @@ class MemoryAgent:
                 all_chunks.extend(chunks)
                 all_embeddings.extend(embeddings)
             
-            # Store in ChromaDB
+            # Store in vector database (Weaviate or ChromaDB)
             if all_chunks:
-                chunk_ids = self.chroma_memory.add_research_chunks(
+                chunk_ids = self.vector_memory.add_research_chunks(
                     chunks=all_chunks,
                     embeddings=all_embeddings,
                     metadata_list=all_metadata,
@@ -182,7 +208,7 @@ class MemoryAgent:
             query_embedding = self.embed_text(query)
             
             # Retrieve similar chunks
-            results = self.chroma_memory.retrieve_similar_chunks(
+            results = self.vector_memory.retrieve_similar_chunks(
                 query_embedding=query_embedding,
                 n_results=n_results
             )
@@ -218,7 +244,7 @@ class MemoryAgent:
             query_embedding = self.embed_text(query)
             
             # Retrieve similar memories
-            results = self.chroma_memory.retrieve_topic_memory(
+            results = self.vector_memory.retrieve_topic_memory(
                 query_embedding=query_embedding,
                 n_results=n_results
             )
@@ -260,7 +286,7 @@ class MemoryAgent:
             summary_embedding = self.embed_text(summary)
             
             # Store in topic memory
-            memory_id = self.chroma_memory.add_topic_memory(
+            memory_id = self.vector_memory.add_topic_memory(
                 query=query,
                 summary=summary,
                 embedding=summary_embedding,
@@ -337,7 +363,7 @@ class MemoryAgent:
             Dictionary with memory statistics
         """
         try:
-            stats = self.chroma_memory.get_collection_stats()
+            stats = self.vector_memory.get_collection_stats()
             logger.info(f"📊 Memory stats: {stats}")
             return stats
         except Exception as e:

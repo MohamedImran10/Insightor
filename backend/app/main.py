@@ -1,10 +1,11 @@
 """
 Main FastAPI application
 Exposes research endpoint and health checks
-Phase 3: Multi-user, RAG-powered research with Qdrant + Firebase
+Phase 3: Multi-user, RAG-powered research with Pinecone/Weaviate + Firebase
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -25,8 +26,17 @@ from app.models import (
 )
 from app.agents.orchestrator import ResearchOrchestrator
 from app.agents.embeddings import EmbeddingGenerator
-from app.agents.chroma_memory import ChromaMemory
-from app.agents.qdrant_memory import QdrantMemory
+
+# Use Pinecone/Weaviate for production, ChromaDB for development fallback
+USE_WEAVIATE = os.getenv('USE_WEAVIATE', 'true').lower() == 'true'
+
+if USE_WEAVIATE:
+    from app.agents.weaviate_memory import WeaviateMemory as VectorMemory
+    from app.agents.weaviate_memory import get_weaviate_memory as get_vector_memory
+else:
+    from app.agents.chroma_memory import ChromaMemory as VectorMemory
+    from app.agents.chroma_memory import get_chroma_memory as get_vector_memory
+
 from app.agents.followup_agent import FollowupAgent
 from app.agents.citation_extractor import CitationExtractor
 from app.agents.topic_graph_agent import TopicGraphAgent
@@ -44,7 +54,6 @@ logger = logging.getLogger(__name__)
 
 # Global instances
 orchestrator: Optional[ResearchOrchestrator] = None
-qdrant_memory: Optional[QdrantMemory] = None
 followup_agent: Optional[FollowupAgent] = None
 citation_extractor: Optional[CitationExtractor] = None
 topic_graph_agent: Optional[TopicGraphAgent] = None
@@ -55,10 +64,10 @@ firebase_auth: Optional[FirebaseAuth] = None
 async def lifespan(app: FastAPI):
     """
     Lifespan context manager for app startup and shutdown
-    Phase 3: Initialize Qdrant, Firebase, and new agents
+    Phase 3: Initialize Weaviate, Firebase, and new agents
     """
     # Startup
-    global orchestrator, qdrant_memory, followup_agent, citation_extractor, topic_graph_agent, firebase_auth
+    global orchestrator, followup_agent, citation_extractor, topic_graph_agent, firebase_auth
     try:
         logger.info("🚀 Initializing Phase 3 Research System...")
         
@@ -74,20 +83,6 @@ async def lifespan(app: FastAPI):
             gemini_key=settings.google_api_key
         )
         logger.info("✅ Orchestrator initialized")
-        
-        # Initialize Qdrant Cloud (optional - can fail gracefully)
-        logger.info("🔗 Initializing Qdrant Cloud Memory...")
-        qdrant_memory = QdrantMemory(
-            qdrant_url=settings.qdrant_url,
-            qdrant_api_key=settings.qdrant_api_key,
-            vector_size=384
-        )
-        try:
-            await qdrant_memory.ensure_collections()
-            logger.info("✅ Qdrant Cloud initialized")
-        except Exception as e:
-            logger.warning(f"⚠️  Qdrant initialization failed (will use ChromaDB only): {str(e)}")
-            logger.info("💡 To enable Qdrant: start Qdrant server or configure Qdrant Cloud URL")
         
         # Initialize Firebase (optional)
         if settings.firebase_enabled:
@@ -327,7 +322,7 @@ async def memory_debug():
     """
     Memory Debug Mode endpoint
     
-    Returns comprehensive debugging information about ChromaDB memory:
+    Returns comprehensive debugging information about vector memory:
     - Collection statistics
     - Sample research chunks
     - Sample topic memory
@@ -340,19 +335,22 @@ async def memory_debug():
         
         # Get embedder and memory instances
         embedder = EmbeddingGenerator()
-        chroma_memory = ChromaMemory()
+        vector_memory = get_vector_memory()
         
-        # === 1. CHROMA STATS ===
-        stats = chroma_memory.get_collection_stats()
+        # === 1. VECTOR MEMORY STATS ===
+        stats = vector_memory.get_collection_stats()
+        
+        backend = "Weaviate" if USE_WEAVIATE else "ChromaDB"
         
         debug_response = {
             "stats": {
+                "backend": backend,
                 "research_chunks_count": stats.get("research_chunks", 0),
                 "topic_memory_count": stats.get("topic_memory", 0),
                 "total_entries": stats.get("total_entries", 0),
                 "embedding_dimension": embedder.embedding_dim,
                 "embedding_model": embedder.model_name,
-                "db_path": stats.get("db_path", "N/A"),
+                "unlimited_storage": stats.get("unlimited_storage", backend == "Weaviate"),
             },
             "sample_research_chunk": None,
             "sample_topic_memory": None,
@@ -360,58 +358,75 @@ async def memory_debug():
             "timestamp": datetime.now().isoformat()
         }
         
-        # === 2. SAMPLE RESEARCH CHUNK ===
+        # === 2. SAMPLE RESEARCH CHUNK (backend agnostic) ===
         try:
-            chunk_count = chroma_memory.research_chunks.count()
-            if chunk_count > 0:
-                # Get all data and pick a random one
-                all_chunks = chroma_memory.research_chunks.get()
-                
-                if all_chunks.get("ids") and len(all_chunks["ids"]) > 0:
-                    # Pick random index
-                    idx = random.randint(0, len(all_chunks["ids"]) - 1)
-                    chunk_id = all_chunks["ids"][idx]
-                    chunk_text = all_chunks["documents"][idx]
-                    chunk_metadata = all_chunks["metadatas"][idx] if all_chunks.get("metadatas") else {}
-                    
-                    # Cap text at 500 chars
-                    chunk_text_preview = chunk_text[:500] if chunk_text else ""
-                    
+            # For Weaviate, we retrieve via vector search
+            # For ChromaDB, we access collection directly
+            if USE_WEAVIATE:
+                # Use retrieval to get sample
+                test_embedding = embedder.encode("sample content")
+                sample_results = vector_memory.retrieve_similar_chunks(
+                    query_embedding=test_embedding,
+                    n_results=1
+                )
+                if sample_results.get("chunks"):
+                    chunk_info = sample_results["chunks"][0]
                     debug_response["sample_research_chunk"] = {
-                        "id": chunk_id,
-                        "text_preview": chunk_text_preview,
-                        "full_length": len(chunk_text) if chunk_text else 0,
-                        "metadata": chunk_metadata
+                        "text_preview": chunk_info.get("content", "")[:500],
+                        "full_length": len(chunk_info.get("content", "")),
+                        "metadata": chunk_info.get("metadata", {})
                     }
-                    logger.info(f"✅ Sample research chunk retrieved (id={chunk_id}, len={len(chunk_text)})")
+            else:
+                chunk_count = vector_memory.research_chunks.count()
+                if chunk_count > 0:
+                    all_chunks = vector_memory.research_chunks.get()
+                    if all_chunks.get("ids") and len(all_chunks["ids"]) > 0:
+                        idx = random.randint(0, len(all_chunks["ids"]) - 1)
+                        chunk_id = all_chunks["ids"][idx]
+                        chunk_text = all_chunks["documents"][idx]
+                        chunk_metadata = all_chunks["metadatas"][idx] if all_chunks.get("metadatas") else {}
+                        debug_response["sample_research_chunk"] = {
+                            "id": chunk_id,
+                            "text_preview": chunk_text[:500] if chunk_text else "",
+                            "full_length": len(chunk_text) if chunk_text else 0,
+                            "metadata": chunk_metadata
+                        }
+            logger.info("✅ Sample research chunk retrieved")
         except Exception as e:
             logger.warning(f"⚠️  Could not retrieve sample research chunk: {str(e)}")
             debug_response["sample_research_chunk"] = {"error": str(e)}
         
-        # === 3. SAMPLE TOPIC MEMORY ===
+        # === 3. SAMPLE TOPIC MEMORY (backend agnostic) ===
         try:
-            memory_count = chroma_memory.topic_memory.count()
-            if memory_count > 0:
-                # Get all topic memory entries
-                all_memory = chroma_memory.topic_memory.get()
-                
-                if all_memory.get("ids") and len(all_memory["ids"]) > 0:
-                    # Pick random index
-                    idx = random.randint(0, len(all_memory["ids"]) - 1)
-                    memory_id = all_memory["ids"][idx]
-                    memory_text = all_memory["documents"][idx]
-                    memory_metadata = all_memory["metadatas"][idx] if all_memory.get("metadatas") else {}
-                    
-                    # Cap text at 500 chars
-                    memory_text_preview = memory_text[:500] if memory_text else ""
-                    
+            if USE_WEAVIATE:
+                test_embedding = embedder.encode("sample topic")
+                sample_results = vector_memory.retrieve_topic_memory(
+                    query_embedding=test_embedding,
+                    n_results=1
+                )
+                if sample_results.get("memories"):
+                    memory_info = sample_results["memories"][0]
                     debug_response["sample_topic_memory"] = {
-                        "id": memory_id,
-                        "text_preview": memory_text_preview,
-                        "full_length": len(memory_text) if memory_text else 0,
-                        "metadata": memory_metadata
+                        "text_preview": memory_info.get("summary", "")[:500],
+                        "full_length": len(memory_info.get("summary", "")),
+                        "metadata": memory_info.get("metadata", {})
                     }
-                    logger.info(f"✅ Sample topic memory retrieved (id={memory_id}, len={len(memory_text)})")
+            else:
+                memory_count = vector_memory.topic_memory.count()
+                if memory_count > 0:
+                    all_memory = vector_memory.topic_memory.get()
+                    if all_memory.get("ids") and len(all_memory["ids"]) > 0:
+                        idx = random.randint(0, len(all_memory["ids"]) - 1)
+                        memory_id = all_memory["ids"][idx]
+                        memory_text = all_memory["documents"][idx]
+                        memory_metadata = all_memory["metadatas"][idx] if all_memory.get("metadatas") else {}
+                        debug_response["sample_topic_memory"] = {
+                            "id": memory_id,
+                            "text_preview": memory_text[:500] if memory_text else "",
+                            "full_length": len(memory_text) if memory_text else 0,
+                            "metadata": memory_metadata
+                        }
+            logger.info("✅ Sample topic memory retrieved")
         except Exception as e:
             logger.warning(f"⚠️  Could not retrieve sample topic memory: {str(e)}")
             debug_response["sample_topic_memory"] = {"error": str(e)}
@@ -426,7 +441,7 @@ async def memory_debug():
             logger.info(f"✅ Test query embedded (dim={len(test_embedding)})")
             
             # Retrieve top-3 from research_chunks
-            retrieval_results = chroma_memory.retrieve_similar_chunks(
+            retrieval_results = vector_memory.retrieve_similar_chunks(
                 query_embedding=test_embedding,
                 n_results=3,
                 query_text=None

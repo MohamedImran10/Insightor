@@ -3,6 +3,10 @@ FollowupAgent - Generates follow-up questions from research summaries
 Uses Gemini to create thoughtful next-step questions for deeper research
 """
 
+import warnings
+# Suppress the FutureWarning about google.generativeai deprecation
+warnings.filterwarnings("ignore", message="All support for the `google.generativeai` package has ended")
+
 import logging
 import asyncio
 from typing import List

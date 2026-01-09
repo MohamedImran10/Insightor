@@ -13,6 +13,8 @@ html2text
 sentence-transformers
 chromadb
 numpy
-qdrant-client[fastembed]
 firebase-admin
-python-multipartgoogle-cloud-firestore>=2.22.0
+python-multipart
+google-cloud-firestore>=2.22.0
+weaviate-client>=4.0.0
+pinecone-client>=3.0.0

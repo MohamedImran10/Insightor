@@ -22,9 +22,13 @@ class Settings(BaseSettings):
     tavily_include_raw_content: bool = True
     tavily_max_results: int = 5
     
-    # Qdrant Cloud
-    qdrant_url: str = "http://localhost:6333"  # Default local, override with cloud URL
-    qdrant_api_key: str = ""  # Required for cloud
+    # Vector Database
+    use_pinecone: bool = False  # Set to True to use Pinecone
+    pinecone_api_key: Optional[str] = None  # Pinecone API key
+    pinecone_environment: str = "us-east-1-aws"  # Pinecone environment
+    
+    use_weaviate: bool = False  # Set to True to use Weaviate instead of ChromaDB
+    weaviate_url: str = "http://localhost:8085"  # Weaviate server URL
     
     # Firebase
     firebase_credentials_path: Optional[str] = None  # Path to serviceAccountKey.json

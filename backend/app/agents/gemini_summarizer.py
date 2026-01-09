@@ -3,6 +3,10 @@ Gemini LLM Summarizer - Uses Google's Gemini API for intelligent summarization
 Integrated with RAG layer for memory-augmented generation
 """
 
+import warnings
+# Suppress the FutureWarning about google.generativeai deprecation
+warnings.filterwarnings("ignore", message="All support for the `google.generativeai` package has ended")
+
 import google.generativeai as genai
 from typing import List, Dict, Any, Optional
 import logging

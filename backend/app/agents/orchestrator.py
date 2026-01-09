@@ -7,6 +7,7 @@ Clean flat architecture with no deep hierarchies
 from typing import List, Dict, Any, Optional
 import asyncio
 import logging
+import os
 from datetime import datetime
 
 from app.agents.search_agent import SearchAgent, SearchResult
@@ -14,7 +15,24 @@ from app.agents.reader_agent import ReaderAgent
 from app.agents.gemini_summarizer import GeminiSummarizer
 from app.agents.memory_agent import MemoryAgent
 from app.agents.embeddings import get_embedding_generator
-from app.agents.chroma_memory import get_chroma_memory
+
+# Use Pinecone, Weaviate for production, ChromaDB for development fallback
+USE_PINECONE = os.getenv('USE_PINECONE', 'false').lower() == 'true'
+USE_WEAVIATE = os.getenv('USE_WEAVIATE', 'false').lower() == 'true'
+
+if USE_PINECONE:
+    from app.agents.pinecone_memory import PineconeMemory
+    def get_vector_memory():
+        from app.config import get_settings
+        settings = get_settings()
+        return PineconeMemory(
+            api_key=settings.pinecone_api_key,
+            environment=settings.pinecone_environment
+        )
+elif USE_WEAVIATE:
+    from app.agents.weaviate_memory import get_weaviate_memory as get_vector_memory
+else:
+    from app.agents.chroma_memory import get_chroma_memory as get_vector_memory
 
 logger = logging.getLogger(__name__)
 
@@ -37,17 +55,23 @@ class ResearchOrchestrator:
         self.reader_agent = ReaderAgent(timeout=10)
         self.gemini_summarizer = GeminiSummarizer(api_key=gemini_key)
         
-        # RAG components
-        self.embedder = get_embedding_generator()
-        self.chroma_memory = get_chroma_memory()
+        # RAG components - uses Pinecone, Weaviate (production) or ChromaDB (development)
+        if USE_PINECONE:
+            self.embedder = None  # Pinecone handles embeddings internally
+        else:
+            self.embedder = get_embedding_generator()
+        self.vector_memory = get_vector_memory()
+        # Keep chroma_memory alias for backward compatibility
+        self.chroma_memory = self.vector_memory
         self.memory_agent = MemoryAgent(
             embedder=self.embedder,
-            chroma_memory=self.chroma_memory,
+            vector_memory=self.vector_memory,
             chunk_size=1000,
             overlap=100
         )
         
-        logger.info("🚀 Research Orchestrator initialized (SearchAgent → ReaderAgent → MemoryAgent → SummarizerAgent)")
+        backend = "Weaviate" if USE_WEAVIATE else "ChromaDB"
+        logger.info(f"🚀 Research Orchestrator initialized with {backend} (SearchAgent → ReaderAgent → MemoryAgent → SummarizerAgent)")
     
     async def execute_research(self, query: str) -> Dict[str, Any]:
         """

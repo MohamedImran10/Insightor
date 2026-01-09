@@ -1,6 +1,28 @@
-version: '3.8'
-
 services:
+  # Weaviate Vector Database - Optional, only for Weaviate usage
+  # Comment out this service if using Pinecone
+  # weaviate:
+  #   image: semitechnologies/weaviate:latest
+  #   ports:
+  #     - "8085:8080"
+  #     - "50051:50051"
+  #   environment:
+  #     - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
+  #     - PERSISTENCE_DATA_PATH=/var/lib/weaviate
+  #     - QUERY_DEFAULTS_LIMIT=100
+  #     - CLUSTER_HOSTNAME=node1
+  #   volumes:
+  #     - weaviate_data:/var/lib/weaviate
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/v1/.well-known/ready"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 10
+  #     start_period: 30s
+  #   networks:
+  #     - insightor-network
+
   backend:
     build:
       context: ./backend
@@ -14,9 +36,21 @@ services:
       - BACKEND_PORT=8000
       - DEBUG=False
       - FRONTEND_URL=http://frontend:3000
+      # Vector Database configuration (choose one)
+      # Pinecone (recommended for production)
+      - USE_PINECONE=${USE_PINECONE:-true}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_ENVIRONMENT=${PINECONE_ENVIRONMENT:-us-east-1-aws}
+      # Weaviate (alternative - uncomment if using Weaviate)
+      # - USE_WEAVIATE=${USE_WEAVIATE:-false}
+      # - WEAVIATE_URL=http://weaviate:8080
     volumes:
       - ./backend:/app
     command: python run.py
+    # Remove Weaviate dependency when using Pinecone
+    # depends_on:
+    #   weaviate:
+    #     condition: service_healthy
     networks:
       - insightor-network
 
@@ -35,6 +69,10 @@ services:
       - /app/node_modules
     networks:
       - insightor-network
+
+volumes:
+  weaviate_data:
+    driver: local
 
 networks:
   insightor-network:
