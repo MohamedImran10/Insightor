@@ -9,11 +9,11 @@ venv/
 env/
 .venv/
 
-# Firebase / keys / secrets
-*.json
+# Firebase / keys / secrets (keep json files for Firebase)
+# *.json
 *.pem
 *.key
-service-keys/
+# service-keys/
 
 # Local DB, caches
 db/
