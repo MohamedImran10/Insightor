@@ -9,17 +9,22 @@ RUN npm install
 
 COPY . .
 
+# Build argument for API URL
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+
 RUN npm run build
 
-# Production stage
-FROM node:18-alpine
+# Production stage - use nginx for better performance
+FROM nginx:alpine
 
-WORKDIR /app
+# Copy built files from builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-RUN npm install -g serve
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-COPY --from=builder /app/dist ./dist
+# Cloud Run sets PORT env variable, nginx will use it
+EXPOSE 8080
 
-EXPOSE 3000
-
-CMD ["serve", "-s", "dist", "-l", "3000"]
+CMD ["sh", "-c", "sed -i 's/listen 8080/listen '\"$PORT\"'/g' /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]

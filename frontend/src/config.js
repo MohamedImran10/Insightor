@@ -10,6 +10,6 @@ export const firebaseConfig = {
   appId: "1:1076931863510:web:06ec9cbc55c4527abbba77",
 };
 
-export const apiBaseUrl = "http://localhost:8000";
+export const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 console.log("✅ Config loaded from config.js:", firebaseConfig);
