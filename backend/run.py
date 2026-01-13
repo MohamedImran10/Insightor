@@ -24,15 +24,19 @@ if __name__ == "__main__":
         import uvicorn
         from app.config import settings
         
+        # Cloud Run injects PORT environment variable, use it if available
+        port = int(os.environ.get("PORT", settings.backend_port))
+        host = os.environ.get("HOST", settings.backend_host)
+        
         logger.info("🚀 Starting Insightor Backend")
-        logger.info(f"🌐 Server will run on http://{settings.backend_host}:{settings.backend_port}")
-        logger.info(f"📚 API Docs available at http://{settings.backend_host}:{settings.backend_port}/docs")
+        logger.info(f"🌐 Server will run on http://{host}:{port}")
+        logger.info(f"📚 API Docs available at http://{host}:{port}/docs")
         
         uvicorn.run(
             "app.main:app",
-            host=settings.backend_host,
-            port=settings.backend_port,
-            reload=settings.debug,
+            host=host,
+            port=port,
+            reload=False,  # Disable reload in production
             log_level="info"
         )
     except KeyError as e:

@@ -27,10 +27,18 @@ from app.models import (
 from app.agents.orchestrator import ResearchOrchestrator
 from app.agents.embeddings import EmbeddingGenerator
 
-# Use Pinecone/Weaviate for production, ChromaDB for development fallback
-USE_WEAVIATE = os.getenv('USE_WEAVIATE', 'true').lower() == 'true'
+# Use Pinecone for production, Weaviate/ChromaDB for development fallback
+USE_PINECONE = os.getenv('USE_PINECONE', 'false').lower() == 'true'
+USE_WEAVIATE = os.getenv('USE_WEAVIATE', 'false').lower() == 'true'
 
-if USE_WEAVIATE:
+if USE_PINECONE:
+    from app.agents.pinecone_memory import PineconeMemory as VectorMemory
+    def get_vector_memory():
+        return PineconeMemory(
+            api_key=settings.pinecone_api_key,
+            environment=settings.pinecone_environment
+        )
+elif USE_WEAVIATE:
     from app.agents.weaviate_memory import WeaviateMemory as VectorMemory
     from app.agents.weaviate_memory import get_weaviate_memory as get_vector_memory
 else:
@@ -64,7 +72,7 @@ firebase_auth: Optional[FirebaseAuth] = None
 async def lifespan(app: FastAPI):
     """
     Lifespan context manager for app startup and shutdown
-    Phase 3: Initialize Weaviate, Firebase, and new agents
+    Phase 3: Initialize Pinecone, Firebase, and new agents
     """
     # Startup
     global orchestrator, followup_agent, citation_extractor, topic_graph_agent, firebase_auth
@@ -340,7 +348,7 @@ async def memory_debug():
         # === 1. VECTOR MEMORY STATS ===
         stats = vector_memory.get_collection_stats()
         
-        backend = "Weaviate" if USE_WEAVIATE else "ChromaDB"
+        backend = "Pinecone" if USE_PINECONE else ("Weaviate" if USE_WEAVIATE else "ChromaDB")
         
         debug_response = {
             "stats": {
@@ -350,7 +358,7 @@ async def memory_debug():
                 "total_entries": stats.get("total_entries", 0),
                 "embedding_dimension": embedder.embedding_dim,
                 "embedding_model": embedder.model_name,
-                "unlimited_storage": stats.get("unlimited_storage", backend == "Weaviate"),
+                "unlimited_storage": stats.get("unlimited_storage", backend in ["Pinecone", "Weaviate"]),
             },
             "sample_research_chunk": None,
             "sample_topic_memory": None,
@@ -360,9 +368,9 @@ async def memory_debug():
         
         # === 2. SAMPLE RESEARCH CHUNK (backend agnostic) ===
         try:
-            # For Weaviate, we retrieve via vector search
+            # For Pinecone/Weaviate, we retrieve via vector search
             # For ChromaDB, we access collection directly
-            if USE_WEAVIATE:
+            if USE_PINECONE or USE_WEAVIATE:
                 # Use retrieval to get sample
                 test_embedding = embedder.encode("sample content")
                 sample_results = vector_memory.retrieve_similar_chunks(
@@ -398,7 +406,7 @@ async def memory_debug():
         
         # === 3. SAMPLE TOPIC MEMORY (backend agnostic) ===
         try:
-            if USE_WEAVIATE:
+            if USE_PINECONE or USE_WEAVIATE:
                 test_embedding = embedder.encode("sample topic")
                 sample_results = vector_memory.retrieve_topic_memory(
                     query_embedding=test_embedding,
