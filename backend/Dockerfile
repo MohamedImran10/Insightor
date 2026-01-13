@@ -15,11 +15,10 @@ RUN pip install --no-cache-dir --default-timeout=300 -r requirements.txt
 COPY . .
 
 ENV PYTHONUNBUFFERED=1
-# Cloud Run expects PORT 8080 by default
-ENV PORT=8080
 ENV HOST=0.0.0.0
 
-# Expose the port Cloud Run expects
+# Expose port 8080 (Cloud Run default, but will use whatever PORT env var Cloud Run sets)
 EXPOSE 8080
 
-CMD ["python", "run.py"]
+# Use uvicorn directly - Cloud Run sets PORT env var
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
