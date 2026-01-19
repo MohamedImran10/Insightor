@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     
     # Firebase
     firebase_credentials_path: Optional[str] = None  # Path to serviceAccountKey.json
+    firebase_credentials_json: Optional[str] = None  # JSON string for production deployment
     firebase_enabled: bool = False  # Enable Firebase auth
     firebase_project_id: Optional[str] = None  # Firebase project ID
     
