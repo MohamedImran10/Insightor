@@ -73,64 +73,79 @@ async def lifespan(app: FastAPI):
     """
     Lifespan context manager for app startup and shutdown
     Phase 3: Initialize Pinecone, Firebase, and new agents
+    Uses lazy initialization to ensure port binds quickly
     """
-    # Startup
+    # Startup - Keep minimal to ensure port binds quickly
     global orchestrator, followup_agent, citation_extractor, topic_graph_agent, firebase_auth
+    
+    logger.info("🚀 Starting Insightor Backend...")
+    logger.info(f"📊 Config: USE_PINECONE={USE_PINECONE}, USE_WEAVIATE={USE_WEAVIATE}")
+    
+    # Initialize Auth Middleware (lightweight)
     try:
-        logger.info("🚀 Initializing Phase 3 Research System...")
-        
-        # Initialize Auth Middleware
-        logger.info("🔐 Initializing Firebase Auth Middleware...")
         initialize_auth_middleware(firebase_enabled=settings.firebase_enabled)
         logger.info("✅ Auth middleware initialized")
-        
-        # Initialize Orchestrator
-        logger.info("📡 Initializing Research Orchestrator...")
-        orchestrator = ResearchOrchestrator(
-            tavily_key=settings.tavily_api_key,
-            gemini_key=settings.google_api_key
-        )
-        logger.info("✅ Orchestrator initialized")
-        
-        # Initialize Firebase (optional)
-        if settings.firebase_enabled:
-            logger.info("🔐 Initializing Firebase Auth...")
-            try:
-                firebase_auth = initialize_firebase(
-                    credentials_path=settings.firebase_credentials_path,
-                    credentials_json=settings.firebase_credentials_json
-                )
-                logger.info("✅ Firebase initialized")
-            except Exception as e:
-                logger.warning(f"⚠️  Firebase initialization failed: {str(e)}")
-        
-        # Initialize new agents (Phase 3 - optional)
-        logger.info("🤖 Initializing Phase 3 Agents...")
-        try:
-            followup_agent = FollowupAgent(gemini_api_key=settings.google_api_key)
-            citation_extractor = CitationExtractor()
-            # TopicGraphAgent uses the vector memory from memory_agent
-            vector_memory = getattr(orchestrator.memory_agent, 'vector_memory', None) or \
-                           getattr(orchestrator.memory_agent, 'chroma_memory', None)
-            if vector_memory:
-                topic_graph_agent = TopicGraphAgent(
-                    chroma_memory=vector_memory,
-                    embedder=orchestrator.memory_agent.embedder
-                )
-            logger.info("✅ All Phase 3 agents initialized")
-        except Exception as e:
-            logger.warning(f"⚠️  Phase 3 agent initialization failed (core features will work): {str(e)}")
-        
-        logger.info("✅✅✅ Phase 3 System Ready!")
-    
     except Exception as e:
-        logger.error(f"❌ Failed to initialize system: {str(e)}", exc_info=True)
-        raise
+        logger.warning(f"⚠️  Auth middleware failed: {str(e)}")
+    
+    # Yield immediately to allow port binding - components will be initialized lazily
+    logger.info("✅ Server starting - components will initialize on first request...")
     
     yield
     
     # Shutdown
     logger.info("🛑 Shutting down application...")
+
+
+def get_orchestrator():
+    """Lazy initialization of orchestrator"""
+    global orchestrator
+    if orchestrator is None:
+        logger.info("📡 Initializing Research Orchestrator (lazy)...")
+        orchestrator = ResearchOrchestrator(
+            tavily_key=settings.tavily_api_key,
+            gemini_key=settings.google_api_key
+        )
+        logger.info("✅ Orchestrator initialized")
+    return orchestrator
+
+
+def get_followup_agent():
+    """Lazy initialization of followup agent"""
+    global followup_agent
+    if followup_agent is None:
+        try:
+            followup_agent = FollowupAgent(gemini_api_key=settings.google_api_key)
+            logger.info("✅ FollowupAgent initialized")
+        except Exception as e:
+            logger.warning(f"⚠️  FollowupAgent failed: {str(e)}")
+    return followup_agent
+
+
+def get_citation_extractor():
+    """Lazy initialization of citation extractor"""
+    global citation_extractor
+    if citation_extractor is None:
+        try:
+            citation_extractor = CitationExtractor()
+            logger.info("✅ CitationExtractor initialized")
+        except Exception as e:
+            logger.warning(f"⚠️  CitationExtractor failed: {str(e)}")
+    return citation_extractor
+
+
+def init_firebase_lazy():
+    """Lazy initialization of Firebase"""
+    global firebase_auth
+    if firebase_auth is None and settings.firebase_enabled:
+        try:
+            firebase_auth = initialize_firebase(
+                credentials_path=settings.firebase_credentials_path,
+                credentials_json=settings.firebase_credentials_json
+            )
+            logger.info("✅ Firebase initialized (lazy)")
+        except Exception as e:
+            logger.warning(f"⚠️  Firebase initialization failed: {str(e)}")
 
 
 # Create FastAPI app
@@ -209,15 +224,19 @@ async def logout(user: dict = Depends(get_current_user)):
 async def health_check():
     """
     Health check endpoint
-    Verifies that all agents are properly initialized
+    Returns healthy status immediately - components initialize lazily
     """
     try:
-        agents_status = await orchestrator.validate_pipeline()
-        
+        # Simple health check that doesn't require full initialization
         return HealthResponse(
-            status="healthy" if agents_status.get("pipeline_ready") else "degraded",
+            status="healthy",
             timestamp=datetime.now().isoformat(),
-            agents_ready=agents_status
+            agents_ready={
+                "server": True,
+                "use_pinecone": USE_PINECONE,
+                "use_weaviate": USE_WEAVIATE,
+                "firebase_enabled": settings.firebase_enabled
+            }
         )
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
@@ -262,8 +281,11 @@ async def research(
         
         logger.info(f"📥 Received research request: {request.query}")
         
+        # Get orchestrator (lazy initialization)
+        orch = get_orchestrator()
+        
         # Execute research pipeline
-        result = await orchestrator.execute_research(request.query)
+        result = await orch.execute_research(request.query)
         
         if result.get("status") == "error":
             logger.error(f"Research failed: {result.get('error')}")
