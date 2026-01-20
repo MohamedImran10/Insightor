@@ -24,20 +24,21 @@ class FirebaseAuth:
     
     _instance = None
     
-    def __new__(cls, credentials_path: Optional[str] = None):
+    def __new__(cls, credentials_path: Optional[str] = None, credentials_json: Optional[str] = None):
         """Singleton pattern for Firebase app initialization"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
     
-    def __init__(self, credentials_path: Optional[str] = None):
+    def __init__(self, credentials_path: Optional[str] = None, credentials_json: Optional[str] = None):
         """
         Initialize Firebase Admin SDK
         
         Args:
             credentials_path: Path to Firebase service account JSON
-                            If None, uses GOOGLE_APPLICATION_CREDENTIALS env var
+            credentials_json: JSON string of Firebase service account credentials
+                            If both None, uses GOOGLE_APPLICATION_CREDENTIALS env var
         """
         if self._initialized:
             return
@@ -45,16 +46,37 @@ class FirebaseAuth:
         try:
             logger.info("🔐 Initializing Firebase Admin SDK")
             
-            # Initialize Firebase (uses environment variables by default)
-            if credentials_path:
+            # Initialize Firebase with different credential sources
+            if credentials_json:
+                # Use JSON string (for production deployment)
+                import json
+                import tempfile
+                import os
+                
+                cred_dict = json.loads(credentials_json)
+                # Create temporary file for credentials
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                    json.dump(cred_dict, f)
+                    temp_path = f.name
+                
+                creds = credentials.Certificate(temp_path)
+                firebase_admin.initialize_app(creds)
+                
+                # Clean up temp file
+                os.unlink(temp_path)
+                logger.info("✅ Firebase initialized with JSON credentials")
+                
+            elif credentials_path:
+                # Use file path
                 creds = credentials.Certificate(credentials_path)
                 firebase_admin.initialize_app(creds)
+                logger.info("✅ Firebase initialized with file credentials")
             else:
                 # Uses GOOGLE_APPLICATION_CREDENTIALS environment variable
                 firebase_admin.initialize_app()
+                logger.info("✅ Firebase initialized with default credentials")
             
             self._initialized = True
-            logger.info("✅ Firebase Admin SDK initialized")
         
         except Exception as e:
             logger.error(f"❌ Failed to initialize Firebase: {str(e)}")
@@ -151,18 +173,19 @@ class FirebaseAuth:
 firebase_auth: Optional[FirebaseAuth] = None
 
 
-def initialize_firebase(credentials_path: Optional[str] = None) -> FirebaseAuth:
+def initialize_firebase(credentials_path: Optional[str] = None, credentials_json: Optional[str] = None) -> FirebaseAuth:
     """
     Initialize Firebase globally (call once on app startup)
     
     Args:
         credentials_path: Path to Firebase service account JSON
+        credentials_json: JSON string of Firebase service account credentials
     
     Returns:
         FirebaseAuth instance
     """
     global firebase_auth
-    firebase_auth = FirebaseAuth(credentials_path)
+    firebase_auth = FirebaseAuth(credentials_path, credentials_json)
     return firebase_auth
 
 

@@ -17,4 +17,4 @@ firebase-admin
 python-multipart
 google-cloud-firestore>=2.22.0
 weaviate-client>=4.0.0
-pinecone-client==3.0.3
+pinecone>=5.0.0

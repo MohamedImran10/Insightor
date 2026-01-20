@@ -96,7 +96,10 @@ async def lifespan(app: FastAPI):
         if settings.firebase_enabled:
             logger.info("🔐 Initializing Firebase Auth...")
             try:
-                firebase_auth = initialize_firebase(settings.firebase_credentials_path)
+                firebase_auth = initialize_firebase(
+                    credentials_path=settings.firebase_credentials_path,
+                    credentials_json=settings.firebase_credentials_json
+                )
                 logger.info("✅ Firebase initialized")
             except Exception as e:
                 logger.warning(f"⚠️  Firebase initialization failed: {str(e)}")
