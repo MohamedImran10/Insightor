@@ -1,16 +1,17 @@
 """
 Pinecone Memory Implementation for Research Agent
 Stores research chunks and topic memories using Pinecone vector database
+Uses a single index with namespaces for free tier compatibility
 """
 import os
 import json
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
-import pinecone
 from pinecone import Pinecone, ServerlessSpec
 from sentence_transformers import SentenceTransformer
 import hashlib
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -36,24 +37,27 @@ class PineconeMemory:
         self.embedding_model = SentenceTransformer(embedding_model)
         self.embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
         
-        # Index names
-        self.research_index_name = "research-chunks"
-        self.topic_index_name = "topic-memories"
+        # Single index name (free tier allows only 1 index)
+        self.index_name = "insightor"
         
-        # Initialize indexes
-        self._initialize_indexes()
+        # Namespace names for different data types
+        self.research_namespace = "research-chunks"
+        self.topic_namespace = "topic-memories"
         
-    def _initialize_indexes(self):
-        """Initialize Pinecone indexes if they don't exist"""
+        # Initialize index
+        self._initialize_index()
+        
+    def _initialize_index(self):
+        """Initialize Pinecone index if it doesn't exist"""
         try:
             # List existing indexes
             existing_indexes = [index.name for index in self.pc.list_indexes()]
             
-            # Create research chunks index
-            if self.research_index_name not in existing_indexes:
-                logger.info(f"Creating research index: {self.research_index_name}")
+            # Create main index if it doesn't exist
+            if self.index_name not in existing_indexes:
+                logger.info(f"Creating Pinecone index: {self.index_name}")
                 self.pc.create_index(
-                    name=self.research_index_name,
+                    name=self.index_name,
                     dimension=self.embedding_dim,
                     metric="cosine",
                     spec=ServerlessSpec(
@@ -61,23 +65,13 @@ class PineconeMemory:
                         region="us-east-1"
                     )
                 )
+                # Wait for index to be ready
+                logger.info("Waiting for index to be ready...")
+                time.sleep(30)
             
-            # Create topic memories index  
-            if self.topic_index_name not in existing_indexes:
-                logger.info(f"Creating topic index: {self.topic_index_name}")
-                self.pc.create_index(
-                    name=self.topic_index_name,
-                    dimension=self.embedding_dim,
-                    metric="cosine",
-                    spec=ServerlessSpec(
-                        cloud="aws", 
-                        region="us-east-1"
-                    )
-                )
-                
-            # Connect to indexes
-            self.research_index = self.pc.Index(self.research_index_name)
-            self.topic_index = self.pc.Index(self.topic_index_name)
+            # Connect to index
+            self.index = self.pc.Index(self.index_name)
+            logger.info(f"✅ Connected to Pinecone index: {self.index_name}")
             
             logger.info("Pinecone indexes initialized successfully")
             
@@ -109,21 +103,24 @@ class PineconeMemory:
             
             # Prepare metadata (Pinecone has metadata size limits)
             pinecone_metadata = {
-                "content": content,
-                "query": metadata.get("query", ""),
-                "source": metadata.get("source", ""),
+                "content": content[:1000],  # Limit content length
+                "query": metadata.get("query", "")[:200],
+                "source": metadata.get("source", "")[:500],
                 "timestamp": metadata.get("timestamp", datetime.now().isoformat()),
                 "type": "research_chunk"
             }
             
-            # Store in Pinecone
-            self.research_index.upsert([
-                {
-                    "id": vector_id,
-                    "values": embedding,
-                    "metadata": pinecone_metadata
-                }
-            ])
+            # Store in Pinecone using namespace
+            self.index.upsert(
+                vectors=[
+                    {
+                        "id": vector_id,
+                        "values": embedding,
+                        "metadata": pinecone_metadata
+                    }
+                ],
+                namespace=self.research_namespace
+            )
             
             logger.info(f"Stored research chunk with ID: {vector_id}")
             return vector_id
@@ -147,11 +144,12 @@ class PineconeMemory:
             # Generate query embedding
             query_embedding = self.embedding_model.encode(query).tolist()
             
-            # Search in Pinecone
-            results = self.research_index.query(
+            # Search in Pinecone using namespace
+            results = self.index.query(
                 vector=query_embedding,
                 top_k=limit,
-                include_metadata=True
+                include_metadata=True,
+                namespace=self.research_namespace
             )
             
             # Format results
@@ -197,24 +195,27 @@ class PineconeMemory:
             # Generate unique ID
             vector_id = self._generate_vector_id(content)
             
-            # Prepare metadata
+            # Prepare metadata (limit sizes for Pinecone)
             pinecone_metadata = {
-                "topic": topic,
-                "summary": summary,
-                "related_queries": json.dumps(related_queries),
-                "key_insights": json.dumps(key_insights),
+                "topic": topic[:200],
+                "summary": summary[:1000],
+                "related_queries": json.dumps(related_queries[:10]),
+                "key_insights": json.dumps(key_insights[:10]),
                 "timestamp": datetime.now().isoformat(),
                 "type": "topic_memory"
             }
             
-            # Store in Pinecone
-            self.topic_index.upsert([
-                {
-                    "id": vector_id,
-                    "values": embedding,
-                    "metadata": pinecone_metadata
-                }
-            ])
+            # Store in Pinecone using namespace
+            self.index.upsert(
+                vectors=[
+                    {
+                        "id": vector_id,
+                        "values": embedding,
+                        "metadata": pinecone_metadata
+                    }
+                ],
+                namespace=self.topic_namespace
+            )
             
             logger.info(f"Stored topic memory for: {topic}")
             return vector_id
@@ -238,11 +239,12 @@ class PineconeMemory:
             # Generate query embedding
             query_embedding = self.embedding_model.encode(query).tolist()
             
-            # Search in Pinecone
-            results = self.topic_index.query(
+            # Search in Pinecone using namespace
+            results = self.index.query(
                 vector=query_embedding,
                 top_k=limit,
-                include_metadata=True
+                include_metadata=True,
+                namespace=self.topic_namespace
             )
             
             # Format results
@@ -273,11 +275,12 @@ class PineconeMemory:
             List of topic names
         """
         try:
-            # Query all vectors in topic index (limited approach for free tier)
-            results = self.topic_index.query(
+            # Query all vectors in topic namespace (limited approach for free tier)
+            results = self.index.query(
                 vector=[0] * self.embedding_dim,  # Dummy vector
                 top_k=1000,  # Adjust based on your needs
-                include_metadata=True
+                include_metadata=True,
+                namespace=self.topic_namespace
             )
             
             topics = []
@@ -300,12 +303,21 @@ class PineconeMemory:
             Dictionary with statistics
         """
         try:
-            research_stats = self.research_index.describe_index_stats()
-            topic_stats = self.topic_index.describe_index_stats()
+            stats = self.index.describe_index_stats()
+            
+            # Get namespace-specific counts
+            research_count = 0
+            topic_count = 0
+            if hasattr(stats, 'namespaces') and stats.namespaces:
+                if self.research_namespace in stats.namespaces:
+                    research_count = stats.namespaces[self.research_namespace].vector_count
+                if self.topic_namespace in stats.namespaces:
+                    topic_count = stats.namespaces[self.topic_namespace].vector_count
             
             return {
-                "research_chunks": research_stats.total_vector_count,
-                "topic_memories": topic_stats.total_vector_count,
+                "research_chunks": research_count,
+                "topic_memories": topic_count,
+                "total_vectors": stats.total_vector_count,
                 "embedding_dimension": self.embedding_dim,
                 "embedding_model": self.embedding_model_name
             }
@@ -315,13 +327,45 @@ class PineconeMemory:
             return {}
     
     def clear_all_data(self):
-        """Clear all data from both indexes (use with caution!)"""
+        """Clear all data from both namespaces (use with caution!)"""
         try:
-            # Delete all vectors from both indexes
-            self.research_index.delete(delete_all=True)
-            self.topic_index.delete(delete_all=True)
-            logger.info("Cleared all data from Pinecone indexes")
+            # Delete all vectors from both namespaces
+            self.index.delete(delete_all=True, namespace=self.research_namespace)
+            self.index.delete(delete_all=True, namespace=self.topic_namespace)
+            logger.info("Cleared all data from Pinecone index")
             
         except Exception as e:
             logger.error(f"Error clearing data: {e}")
             raise
+    
+    def retrieve_similar_chunks(self, query_embedding: List[float], n_results: int = 5) -> Dict[str, Any]:
+        """
+        Retrieve similar chunks using pre-computed embedding
+        Compatible with ChromaDB interface
+        
+        Args:
+            query_embedding: Pre-computed query embedding
+            n_results: Number of results to return
+            
+        Returns:
+            Dictionary with chunks and metadata
+        """
+        try:
+            results = self.index.query(
+                vector=query_embedding,
+                top_k=n_results,
+                include_metadata=True,
+                namespace=self.research_namespace
+            )
+            
+            chunks = []
+            metadatas = []
+            for match in results.matches:
+                chunks.append(match.metadata.get("content", ""))
+                metadatas.append(match.metadata)
+            
+            return {"chunks": chunks, "metadatas": metadatas}
+            
+        except Exception as e:
+            logger.error(f"Error retrieving similar chunks: {e}")
+            return {"chunks": [], "metadatas": []}

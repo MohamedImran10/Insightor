@@ -70,7 +70,7 @@ class ResearchOrchestrator:
             overlap=100
         )
         
-        backend = "Weaviate" if USE_WEAVIATE else "ChromaDB"
+        backend = "Pinecone" if USE_PINECONE else ("Weaviate" if USE_WEAVIATE else "ChromaDB")
         logger.info(f"🚀 Research Orchestrator initialized with {backend} (SearchAgent → ReaderAgent → MemoryAgent → SummarizerAgent)")
     
     async def execute_research(self, query: str) -> Dict[str, Any]:

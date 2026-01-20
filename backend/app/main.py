@@ -34,7 +34,7 @@ USE_WEAVIATE = os.getenv('USE_WEAVIATE', 'false').lower() == 'true'
 if USE_PINECONE:
     from app.agents.pinecone_memory import PineconeMemory as VectorMemory
     def get_vector_memory():
-        return PineconeMemory(
+        return VectorMemory(
             api_key=settings.pinecone_api_key,
             environment=settings.pinecone_environment
         )
@@ -109,10 +109,14 @@ async def lifespan(app: FastAPI):
         try:
             followup_agent = FollowupAgent(gemini_api_key=settings.google_api_key)
             citation_extractor = CitationExtractor()
-            topic_graph_agent = TopicGraphAgent(
-                chroma_memory=orchestrator.memory_agent.chroma_memory,
-                embedder=orchestrator.memory_agent.embedder
-            )
+            # TopicGraphAgent uses the vector memory from memory_agent
+            vector_memory = getattr(orchestrator.memory_agent, 'vector_memory', None) or \
+                           getattr(orchestrator.memory_agent, 'chroma_memory', None)
+            if vector_memory:
+                topic_graph_agent = TopicGraphAgent(
+                    chroma_memory=vector_memory,
+                    embedder=orchestrator.memory_agent.embedder
+                )
             logger.info("✅ All Phase 3 agents initialized")
         except Exception as e:
             logger.warning(f"⚠️  Phase 3 agent initialization failed (core features will work): {str(e)}")
