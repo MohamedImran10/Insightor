@@ -4,7 +4,7 @@ gunicorn
 python-dotenv
 httpx
 aiohttp
-google-generativeai
+google-genai
 tavily-python
 pydantic
 pydantic-settings

@@ -3,12 +3,76 @@ Firebase Auth Middleware - Extracts and verifies Firebase ID tokens from Authori
 """
 
 import logging
+import os
+import json
 from typing import Optional
 from fastapi import Request, HTTPException, status
 import firebase_admin
-from firebase_admin import auth
+from firebase_admin import auth, credentials
 
 logger = logging.getLogger(__name__)
+
+# Track if Firebase has been initialized
+_firebase_initialized = False
+
+
+def ensure_firebase_initialized():
+    """Ensure Firebase Admin SDK is initialized before verifying tokens"""
+    global _firebase_initialized
+    
+    if _firebase_initialized:
+        return True
+    
+    # Check if already initialized by another module
+    try:
+        firebase_admin.get_app()
+        _firebase_initialized = True
+        logger.info("✅ Firebase already initialized by another module")
+        return True
+    except ValueError:
+        pass  # App not initialized yet
+    
+    try:
+        # Import settings from config (this loads from .env file)
+        from app.config import settings
+        
+        # Try to initialize from environment variable (JSON string) - for production
+        firebase_json = settings.firebase_credentials_json or os.getenv('FIREBASE_CREDENTIALS_JSON')
+        if firebase_json:
+            logger.info("🔍 Found FIREBASE_CREDENTIALS_JSON, attempting to initialize...")
+            cred_dict = json.loads(firebase_json)
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred)
+            _firebase_initialized = True
+            logger.info("✅ Firebase initialized from FIREBASE_CREDENTIALS_JSON")
+            return True
+        
+        # Try to initialize from file path - for local development
+        firebase_path = settings.firebase_credentials_path or os.getenv('FIREBASE_CREDENTIALS_PATH')
+        logger.info(f"🔍 FIREBASE_CREDENTIALS_PATH = {firebase_path}")
+        
+        if firebase_path:
+            # Check if file exists
+            if os.path.exists(firebase_path):
+                logger.info(f"📁 Firebase credentials file found at: {firebase_path}")
+                cred = credentials.Certificate(firebase_path)
+                firebase_admin.initialize_app(cred)
+                _firebase_initialized = True
+                logger.info(f"✅ Firebase initialized from file: {firebase_path}")
+                return True
+            else:
+                logger.error(f"❌ Firebase credentials file NOT found at: {firebase_path}")
+        else:
+            logger.warning("⚠️ FIREBASE_CREDENTIALS_PATH not set")
+        
+        logger.warning("⚠️ No Firebase credentials found - check FIREBASE_CREDENTIALS_PATH or FIREBASE_CREDENTIALS_JSON")
+        return False
+        
+    except Exception as e:
+        logger.error(f"❌ Firebase initialization failed: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return False
 
 
 class FirebaseAuthMiddleware:
@@ -60,6 +124,14 @@ class FirebaseAuthMiddleware:
                 detail="Invalid Authorization header format. Use: Bearer <token>"
             )
         
+        # Ensure Firebase is initialized before verifying token
+        if not ensure_firebase_initialized():
+            logger.error("Firebase not initialized, cannot verify token")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication service not available"
+            )
+        
         # Verify token with Firebase
         try:
             decoded_token = auth.verify_id_token(token)
@@ -104,6 +176,15 @@ def initialize_auth_middleware(firebase_enabled: bool = True):
     global firebase_middleware
     firebase_middleware = FirebaseAuthMiddleware(firebase_enabled=firebase_enabled)
     logger.info(f"🔐 Auth middleware initialized (Firebase: {'enabled' if firebase_enabled else 'disabled'})")
+    
+    # Initialize Firebase immediately if enabled
+    if firebase_enabled:
+        logger.info("🔥 Attempting to initialize Firebase Admin SDK...")
+        if ensure_firebase_initialized():
+            logger.info("✅ Firebase Admin SDK ready")
+        else:
+            logger.warning("⚠️ Firebase Admin SDK initialization failed - auth will not work")
+    
     return firebase_middleware
 
 

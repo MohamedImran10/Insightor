@@ -3,14 +3,10 @@ FollowupAgent - Generates follow-up questions from research summaries
 Uses Gemini to create thoughtful next-step questions for deeper research
 """
 
-import warnings
-# Suppress the FutureWarning about google.generativeai deprecation
-warnings.filterwarnings("ignore", message="All support for the `google.generativeai` package has ended")
-
 import logging
 import asyncio
 from typing import List
-import google.generativeai as genai
+from google import genai
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +25,8 @@ class FollowupAgent:
             gemini_api_key: Google Gemini API key
         """
         try:
-            genai.configure(api_key=gemini_api_key)
-            self.client = genai.GenerativeModel("gemini-2.5-flash")
+            self.client = genai.Client(api_key=gemini_api_key)
+            self.model = "gemini-2.5-flash"
             logger.info("✅ FollowupAgent initialized")
         except Exception as e:
             logger.error(f"❌ Failed to initialize FollowupAgent: {str(e)}")
@@ -84,7 +80,10 @@ Output ONLY the questions, one per line, starting with a number (e.g., "1. Quest
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
-                lambda: self.client.generate_content(prompt)
+                lambda: self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt
+                )
             )
             
             # Parse response

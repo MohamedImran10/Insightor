@@ -3,11 +3,8 @@ Gemini LLM Summarizer - Uses Google's Gemini API for intelligent summarization
 Integrated with RAG layer for memory-augmented generation
 """
 
-import warnings
-# Suppress the FutureWarning about google.generativeai deprecation
-warnings.filterwarnings("ignore", message="All support for the `google.generativeai` package has ended")
-
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from typing import List, Dict, Any, Optional
 import logging
 import json
@@ -32,9 +29,8 @@ class GeminiSummarizer:
         self.api_key = api_key
         self.model = model
         
-        # Configure Gemini
-        genai.configure(api_key=api_key)
-        self.client = genai.GenerativeModel(model)
+        # Configure Gemini client
+        self.client = genai.Client(api_key=api_key)
     
     async def summarize_research(
         self,
@@ -65,7 +61,13 @@ class GeminiSummarizer:
             # Call Gemini (run in executor to avoid blocking event loop)
             import asyncio
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(None, lambda: self.client.generate_content(prompt))
+            response = await loop.run_in_executor(
+                None, 
+                lambda: self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt
+                )
+            )
             summary_text = response.text
             
             logger.info("✅ Summary generated successfully")
@@ -338,7 +340,10 @@ SUMMARY: {summary}
 
 Provide only the questions, one per line, without numbering or bullet points. Make them specific and actionable."""
             
-            response = self.client.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt
+            )
             questions = [q.strip() for q in response.text.split('\n') if q.strip()]
             
             return questions[:5]
@@ -365,7 +370,10 @@ Provide only the questions, one per line, without numbering or bullet points. Ma
 Format as JSON with metric name as key and value. Example: {{"Market Size": "$50 billion", "Growth Rate": "23% annually"}}
 """
             
-            response = self.client.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt
+            )
             
             # Try to parse as JSON
             try:
