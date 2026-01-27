@@ -32,12 +32,16 @@ if __name__ == "__main__":
         logger.info(f"🌐 Server will run on http://{host}:{port}")
         logger.info(f"📚 API Docs available at http://{host}:{port}/docs")
         
+        # Use reload only in debug mode and not in production
+        reload_mode = settings.debug and os.environ.get("RENDER") is None
+        
         uvicorn.run(
             "app.main:app",
             host=host,
             port=port,
-            reload=False,  # Disable reload in production
-            log_level="info"
+            reload=reload_mode,
+            log_level="info",
+            workers=1  # Single worker for Render free tier
         )
     except KeyError as e:
         logger.error(f"❌ Missing environment variable: {str(e)}")
