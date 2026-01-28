@@ -1,19 +1,14 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
-import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export default defineConfig(({ command, mode }) => {
   // Load env file from frontend directory specifically
-  const env = loadEnv(mode, path.resolve(__dirname), '');
-  
-  console.log('📋 Vite loaded env vars:', Object.keys(env).filter(k => k.startsWith('VITE_')));
-  console.log('📂 Loading from directory:', path.resolve(__dirname));
-  
-  // Debug: show actual values being loaded
-  console.log('✅ Loaded values:');
-  console.log('  VITE_FIREBASE_API_KEY:', env.VITE_FIREBASE_API_KEY ? 'YES' : 'MISSING');
-  console.log('  VITE_FIREBASE_AUTH_DOMAIN:', env.VITE_FIREBASE_AUTH_DOMAIN || 'MISSING');
-  console.log('  VITE_FIREBASE_PROJECT_ID:', env.VITE_FIREBASE_PROJECT_ID || 'MISSING');
+  const env = loadEnv(mode, __dirname, '');
 
   return {
     plugins: [react()],
