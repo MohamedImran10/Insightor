@@ -13,59 +13,92 @@ import random
 import time
 
 from fastapi import FastAPI, HTTPException, status, Depends
-from firebase_admin import firestore
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
-from app.config import settings
-from app.models import (
-    ResearchRequest, ResearchResponse, HealthResponse,
-    ExtendedResearchResponse, UserInfo, ResearchHistoryResponse,
-    ResearchHistoryItem, TopicGraphResponse
-)
-from app.agents.orchestrator import ResearchOrchestrator
-from app.agents.embeddings import EmbeddingGenerator
-
-# Use Pinecone for production, Weaviate/ChromaDB for development fallback
-USE_PINECONE = os.getenv('USE_PINECONE', 'false').lower() == 'true'
-USE_WEAVIATE = os.getenv('USE_WEAVIATE', 'false').lower() == 'true'
-
-if USE_PINECONE:
-    from app.agents.pinecone_memory import PineconeMemory as VectorMemory
-    def get_vector_memory():
-        return VectorMemory(
-            api_key=settings.pinecone_api_key,
-            environment=settings.pinecone_environment
-        )
-elif USE_WEAVIATE:
-    from app.agents.weaviate_memory import WeaviateMemory as VectorMemory
-    from app.agents.weaviate_memory import get_weaviate_memory as get_vector_memory
-else:
-    from app.agents.chroma_memory import ChromaMemory as VectorMemory
-    from app.agents.chroma_memory import get_chroma_memory as get_vector_memory
-
-from app.agents.followup_agent import FollowupAgent
-from app.agents.citation_extractor import CitationExtractor
-from app.agents.topic_graph_agent import TopicGraphAgent
-from app.auth import FirebaseAuth, initialize_firebase, get_firebase_auth
-from app.auth_middleware import initialize_auth_middleware
-from app.dependencies import get_current_user, get_user_id
-from app.firestore_history import get_history_manager
-
-# Configure logging
+# Configure logging early
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
+# Safe imports with error handling
+try:
+    from app.config import settings
+    logger.info("✅ Settings loaded")
+except Exception as e:
+    logger.error(f"❌ Failed to load settings: {e}")
+    raise
+
+try:
+    from app.models import (
+        ResearchRequest, ResearchResponse, HealthResponse,
+        ExtendedResearchResponse, UserInfo, ResearchHistoryResponse,
+        ResearchHistoryItem, TopicGraphResponse
+    )
+    logger.info("✅ Models loaded")
+except Exception as e:
+    logger.error(f"❌ Failed to load models: {e}")
+    raise
+
+# Use Pinecone for production, Weaviate/ChromaDB for development fallback
+USE_PINECONE = os.getenv('USE_PINECONE', 'false').lower() == 'true'
+USE_WEAVIATE = os.getenv('USE_WEAVIATE', 'false').lower() == 'true'
+logger.info(f"📊 Vector DB Config: USE_PINECONE={USE_PINECONE}, USE_WEAVIATE={USE_WEAVIATE}")
+
+# Lazy imports for vector memory - don't import at module level
+def get_vector_memory():
+    if USE_PINECONE:
+        from app.agents.pinecone_memory import PineconeMemory
+        return PineconeMemory(
+            api_key=settings.pinecone_api_key,
+            environment=settings.pinecone_environment
+        )
+    elif USE_WEAVIATE:
+        from app.agents.weaviate_memory import get_weaviate_memory
+        return get_weaviate_memory()
+    else:
+        from app.agents.chroma_memory import get_chroma_memory
+        return get_chroma_memory()
+
+# Safe imports for other modules
+try:
+    from app.agents.orchestrator import ResearchOrchestrator
+    from app.agents.embeddings import EmbeddingGenerator
+    from app.agents.followup_agent import FollowupAgent
+    from app.agents.citation_extractor import CitationExtractor
+    from app.agents.topic_graph_agent import TopicGraphAgent
+    logger.info("✅ Agent modules loaded")
+except Exception as e:
+    logger.error(f"❌ Failed to load agent modules: {e}")
+    raise
+
+# Firebase imports - non-fatal if they fail
+try:
+    from firebase_admin import firestore
+    from app.auth import FirebaseAuth, initialize_firebase, get_firebase_auth
+    from app.auth_middleware import initialize_auth_middleware
+    from app.dependencies import get_current_user, get_user_id
+    from app.firestore_history import get_history_manager
+    FIREBASE_AVAILABLE = True
+    logger.info("✅ Firebase modules loaded")
+except Exception as e:
+    logger.warning(f"⚠️ Firebase modules not available: {e}")
+    FIREBASE_AVAILABLE = False
+    # Create dummy functions
+    def initialize_auth_middleware(**kwargs): pass
+    def get_current_user(): return None
+    def get_user_id(): return "anonymous"
+    def get_history_manager(): return None
+
 # Global instances
 orchestrator: Optional[ResearchOrchestrator] = None
 followup_agent: Optional[FollowupAgent] = None
 citation_extractor: Optional[CitationExtractor] = None
 topic_graph_agent: Optional[TopicGraphAgent] = None
-firebase_auth: Optional[FirebaseAuth] = None
+firebase_auth = None
 
 
 @asynccontextmanager
@@ -81,12 +114,15 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Insightor Backend...")
     logger.info(f"📊 Config: USE_PINECONE={USE_PINECONE}, USE_WEAVIATE={USE_WEAVIATE}")
     
-    # Initialize Auth Middleware (lightweight)
-    try:
-        initialize_auth_middleware(firebase_enabled=settings.firebase_enabled)
-        logger.info("✅ Auth middleware initialized")
-    except Exception as e:
-        logger.warning(f"⚠️  Auth middleware failed: {str(e)}")
+    # Initialize Auth Middleware (lightweight) - wrapped in try/except
+    if FIREBASE_AVAILABLE:
+        try:
+            initialize_auth_middleware(firebase_enabled=settings.firebase_enabled)
+            logger.info("✅ Auth middleware initialized")
+        except Exception as e:
+            logger.warning(f"⚠️  Auth middleware failed: {str(e)} - continuing without auth")
+    else:
+        logger.warning("⚠️  Firebase not available - auth disabled")
     
     # Yield immediately to allow port binding - components will be initialized lazily
     logger.info("✅ Server starting - components will initialize on first request...")
