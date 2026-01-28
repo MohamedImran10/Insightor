@@ -40,12 +40,19 @@ def ensure_firebase_initialized():
         firebase_json = settings.firebase_credentials_json or os.getenv('FIREBASE_CREDENTIALS_JSON')
         if firebase_json:
             logger.info("🔍 Found FIREBASE_CREDENTIALS_JSON, attempting to initialize...")
-            cred_dict = json.loads(firebase_json)
-            cred = credentials.Certificate(cred_dict)
-            firebase_admin.initialize_app(cred)
-            _firebase_initialized = True
-            logger.info("✅ Firebase initialized from FIREBASE_CREDENTIALS_JSON")
-            return True
+            try:
+                cred_dict = json.loads(firebase_json)
+                cred = credentials.Certificate(cred_dict)
+                firebase_admin.initialize_app(cred)
+                _firebase_initialized = True
+                logger.info("✅ Firebase initialized from FIREBASE_CREDENTIALS_JSON")
+                return True
+            except json.JSONDecodeError as je:
+                logger.error(f"❌ Failed to parse FIREBASE_CREDENTIALS_JSON: {je}")
+                logger.warning("⚠️ Continuing without Firebase - auth will not work")
+            except Exception as fe:
+                logger.error(f"❌ Failed to initialize Firebase from JSON: {fe}")
+                logger.warning("⚠️ Continuing without Firebase - auth will not work")
         
         # Try to initialize from file path - for local development
         firebase_path = settings.firebase_credentials_path or os.getenv('FIREBASE_CREDENTIALS_PATH')
