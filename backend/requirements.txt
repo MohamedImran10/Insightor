@@ -11,6 +11,9 @@ pydantic-settings
 beautifulsoup4
 requests
 html2text
+# Use CPU-only torch to reduce size from 2GB to ~200MB
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
 sentence-transformers
 chromadb
 numpy
