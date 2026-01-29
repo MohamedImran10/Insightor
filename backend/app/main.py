@@ -48,6 +48,60 @@ USE_PINECONE = os.getenv('USE_PINECONE', 'false').lower() == 'true'
 USE_WEAVIATE = os.getenv('USE_WEAVIATE', 'false').lower() == 'true'
 logger.info(f"📊 Vector DB Config: USE_PINECONE={USE_PINECONE}, USE_WEAVIATE={USE_WEAVIATE}")
 
+# ALL HEAVY IMPORTS ARE DEFERRED TO RUNTIME - Do NOT import at module level
+# This ensures the server binds to the port immediately
+AGENTS_AVAILABLE = False  # Will be set to True on first request
+ResearchOrchestrator = None
+EmbeddingGenerator = None
+FollowupAgent = None
+CitationExtractor = None
+TopicGraphAgent = None
+
+# Firebase imports - non-fatal if they fail (these are lightweight)
+FIREBASE_AVAILABLE = False
+try:
+    from app.auth import FirebaseAuth, initialize_firebase, get_firebase_auth
+    from app.auth_middleware import initialize_auth_middleware
+    from app.dependencies import get_current_user, get_user_id
+    from app.firestore_history import get_history_manager
+    FIREBASE_AVAILABLE = True
+    logger.info("✅ Firebase modules loaded")
+except Exception as e:
+    logger.warning(f"⚠️ Firebase modules not available: {e}")
+    # Create dummy functions
+    def initialize_auth_middleware(**kwargs): pass
+    def get_current_user(): return None
+    def get_user_id(): return "anonymous"
+    def get_history_manager(): return None
+
+
+# Lazy loader for heavy modules
+def _load_agents():
+    """Load agent modules lazily on first use"""
+    global AGENTS_AVAILABLE, ResearchOrchestrator, EmbeddingGenerator
+    global FollowupAgent, CitationExtractor, TopicGraphAgent
+    
+    if not AGENTS_AVAILABLE:
+        logger.info("📦 Loading agent modules (lazy)...")
+        try:
+            from app.agents.orchestrator import ResearchOrchestrator as OC
+            from app.agents.embeddings import EmbeddingGenerator as EG
+            from app.agents.followup_agent import FollowupAgent as FA
+            from app.agents.citation_extractor import CitationExtractor as CE
+            from app.agents.topic_graph_agent import TopicGraphAgent as TG
+            
+            ResearchOrchestrator = OC
+            EmbeddingGenerator = EG
+            FollowupAgent = FA
+            CitationExtractor = CE
+            TopicGraphAgent = TG
+            AGENTS_AVAILABLE = True
+            logger.info("✅ Agent modules loaded successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to load agent modules: {e}")
+            raise
+
+
 # Lazy imports for vector memory - don't import at module level
 def get_vector_memory():
     if USE_PINECONE:
@@ -63,47 +117,12 @@ def get_vector_memory():
         from app.agents.chroma_memory import get_chroma_memory
         return get_chroma_memory()
 
-# Safe imports for other modules - wrapped to prevent startup failure
-AGENTS_AVAILABLE = False
-try:
-    from app.agents.orchestrator import ResearchOrchestrator
-    from app.agents.embeddings import EmbeddingGenerator
-    from app.agents.followup_agent import FollowupAgent
-    from app.agents.citation_extractor import CitationExtractor
-    from app.agents.topic_graph_agent import TopicGraphAgent
-    AGENTS_AVAILABLE = True
-    logger.info("✅ Agent modules loaded")
-except Exception as e:
-    logger.warning(f"⚠️ Agent modules not available (will load lazily): {e}")
-    ResearchOrchestrator = None
-    EmbeddingGenerator = None
-    FollowupAgent = None
-    CitationExtractor = None
-    TopicGraphAgent = None
-
-# Firebase imports - non-fatal if they fail
-try:
-    from firebase_admin import firestore
-    from app.auth import FirebaseAuth, initialize_firebase, get_firebase_auth
-    from app.auth_middleware import initialize_auth_middleware
-    from app.dependencies import get_current_user, get_user_id
-    from app.firestore_history import get_history_manager
-    FIREBASE_AVAILABLE = True
-    logger.info("✅ Firebase modules loaded")
-except Exception as e:
-    logger.warning(f"⚠️ Firebase modules not available: {e}")
-    FIREBASE_AVAILABLE = False
-    # Create dummy functions
-    def initialize_auth_middleware(**kwargs): pass
-    def get_current_user(): return None
-    def get_user_id(): return "anonymous"
-    def get_history_manager(): return None
 
 # Global instances
-orchestrator: Optional[ResearchOrchestrator] = None
-followup_agent: Optional[FollowupAgent] = None
-citation_extractor: Optional[CitationExtractor] = None
-topic_graph_agent: Optional[TopicGraphAgent] = None
+orchestrator = None
+followup_agent = None
+citation_extractor = None
+topic_graph_agent = None
 firebase_auth = None
 
 
