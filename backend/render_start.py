@@ -20,19 +20,16 @@ if __name__ == "__main__":
     
     print(f"🚀 Starting on {host}:{port}", flush=True)
     print(f"📊 Environment: PORT={port}", flush=True)
+    print(f"📊 USE_PINECONE={os.environ.get('USE_PINECONE', 'not set')}", flush=True)
     
-    try:
-        uvicorn.run(
-            "app.main:app",
-            host=host,
-            port=port,
-            reload=False,
-            log_level="info",
-            workers=1,
-            timeout_keep_alive=30
-        )
-    except Exception as e:
-        print(f"❌ Failed to start server: {e}", flush=True)
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    # Use workers=1 and no reload for production
+    uvicorn.run(
+        "app.main:app",
+        host=host,
+        port=port,
+        reload=False,
+        log_level="info",
+        workers=1,
+        timeout_keep_alive=120,
+        limit_concurrency=10
+    )

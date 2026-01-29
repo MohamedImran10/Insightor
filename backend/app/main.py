@@ -63,17 +63,23 @@ def get_vector_memory():
         from app.agents.chroma_memory import get_chroma_memory
         return get_chroma_memory()
 
-# Safe imports for other modules
+# Safe imports for other modules - wrapped to prevent startup failure
+AGENTS_AVAILABLE = False
 try:
     from app.agents.orchestrator import ResearchOrchestrator
     from app.agents.embeddings import EmbeddingGenerator
     from app.agents.followup_agent import FollowupAgent
     from app.agents.citation_extractor import CitationExtractor
     from app.agents.topic_graph_agent import TopicGraphAgent
+    AGENTS_AVAILABLE = True
     logger.info("✅ Agent modules loaded")
 except Exception as e:
-    logger.error(f"❌ Failed to load agent modules: {e}")
-    raise
+    logger.warning(f"⚠️ Agent modules not available (will load lazily): {e}")
+    ResearchOrchestrator = None
+    EmbeddingGenerator = None
+    FollowupAgent = None
+    CitationExtractor = None
+    TopicGraphAgent = None
 
 # Firebase imports - non-fatal if they fail
 try:
@@ -135,9 +141,13 @@ async def lifespan(app: FastAPI):
 
 def get_orchestrator():
     """Lazy initialization of orchestrator"""
-    global orchestrator
+    global orchestrator, ResearchOrchestrator
     if orchestrator is None:
         logger.info("📡 Initializing Research Orchestrator (lazy)...")
+        # Import if not already imported
+        if ResearchOrchestrator is None:
+            from app.agents.orchestrator import ResearchOrchestrator as OrchestratorClass
+            ResearchOrchestrator = OrchestratorClass
         orchestrator = ResearchOrchestrator(
             tavily_key=settings.tavily_api_key,
             gemini_key=settings.google_api_key
@@ -148,9 +158,12 @@ def get_orchestrator():
 
 def get_followup_agent():
     """Lazy initialization of followup agent"""
-    global followup_agent
+    global followup_agent, FollowupAgent
     if followup_agent is None:
         try:
+            if FollowupAgent is None:
+                from app.agents.followup_agent import FollowupAgent as FAClass
+                FollowupAgent = FAClass
             followup_agent = FollowupAgent(gemini_api_key=settings.google_api_key)
             logger.info("✅ FollowupAgent initialized")
         except Exception as e:
@@ -160,9 +173,12 @@ def get_followup_agent():
 
 def get_citation_extractor():
     """Lazy initialization of citation extractor"""
-    global citation_extractor
+    global citation_extractor, CitationExtractor
     if citation_extractor is None:
         try:
+            if CitationExtractor is None:
+                from app.agents.citation_extractor import CitationExtractor as CEClass
+                CitationExtractor = CEClass
             citation_extractor = CitationExtractor()
             logger.info("✅ CitationExtractor initialized")
         except Exception as e:
