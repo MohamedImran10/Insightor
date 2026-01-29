@@ -227,10 +227,19 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Define allowed origins for CORS
+ALLOWED_ORIGINS = [
+    settings.frontend_url,
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://insightor-research-assistant.vercel.app",
+    "https://insightor-omega.vercel.app",
+]
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url, "http://localhost:3000", "*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
