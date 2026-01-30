@@ -23,8 +23,21 @@ USE_WEAVIATE = os.getenv('USE_WEAVIATE', 'false').lower() == 'true'
 if USE_PINECONE:
     from app.agents.pinecone_memory import PineconeMemory
     def get_vector_memory():
-        from app.config import get_settings
-        settings = get_settings()
+        # Import settings with a defensive fallback.
+        # In some deployments the helper function `get_settings` may be missing
+        # if an older commit is deployed. Try to import the helper first,
+        # otherwise read the `settings` object directly from the module.
+        try:
+            from app.config import get_settings
+            settings = get_settings()
+        except Exception:
+            # Fallback: import the module and read `settings` attribute
+            try:
+                import app.config as _config
+                settings = getattr(_config, 'settings')
+            except Exception as e:
+                raise RuntimeError("Could not load application settings: " + str(e))
+
         return PineconeMemory(
             api_key=settings.pinecone_api_key,
             environment=settings.pinecone_environment
