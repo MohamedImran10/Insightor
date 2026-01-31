@@ -3,6 +3,7 @@ Pinecone Memory Implementation for Research Agent
 Stores research chunks and topic memories using Pinecone vector database
 Uses a single index with namespaces for free tier compatibility
 Optimized for low-memory environments (Render free tier)
+MEMORY SAFE: Skips embedding operations on memory-constrained environments
 """
 import os
 import json
@@ -15,12 +16,25 @@ import time
 
 logger = logging.getLogger(__name__)
 
+# Check if we're in a memory-constrained environment (Render free tier)
+# Check both RENDER_MEMORY_SAFE and MEMORY_SAFE_MODE for flexibility
+MEMORY_SAFE_MODE = (
+    os.environ.get('RENDER_MEMORY_SAFE', 'false').lower() == 'true' or
+    os.environ.get('MEMORY_SAFE_MODE', 'false').lower() == 'true'
+)
+
+if MEMORY_SAFE_MODE:
+    logger.warning("⚠️ MEMORY SAFE MODE ENABLED - Vector storage will be skipped")
+
 # Global lazy-loaded embedding model
 _embedding_model = None
 
 def get_embedding_model():
     """Lazy load embedding model to save memory on startup"""
     global _embedding_model
+    if MEMORY_SAFE_MODE:
+        logger.warning("⚠️ Memory safe mode enabled - skipping embedding model load")
+        return None
     if _embedding_model is None:
         logger.info("🔄 Loading embedding model (lazy)...")
         from sentence_transformers import SentenceTransformer
@@ -44,6 +58,11 @@ class PineconeMemory:
         self.embedding_model_name = embedding_model
         self._embedding_model = None  # Lazy loaded
         self.embedding_dim = 384  # all-MiniLM-L6-v2 dimension (known value)
+        
+        # Memory safe mode flag for Render free tier (512MB limit)
+        self.memory_safe_mode = MEMORY_SAFE_MODE
+        if self.memory_safe_mode:
+            logger.warning("⚠️ PineconeMemory running in MEMORY SAFE MODE - storage/search disabled")
         
         # Initialize Pinecone client
         self.pc = Pinecone(api_key=api_key)
@@ -119,6 +138,12 @@ class PineconeMemory:
             vector_id: Unique identifier for the stored chunk
         """
         try:
+            # In memory safe mode, skip storing to avoid loading embedding model
+            if MEMORY_SAFE_MODE:
+                vector_id = self._generate_vector_id(content)
+                logger.info(f"⚠️ Memory safe mode: Skipped storing chunk {vector_id[:8]}...")
+                return vector_id
+            
             # Generate embedding
             embedding = self.embedding_model.encode(content).tolist()
             
@@ -167,6 +192,11 @@ class PineconeMemory:
         Returns:
             List of stored chunk IDs
         """
+        # Skip in memory safe mode
+        if self.memory_safe_mode:
+            logger.info(f"Memory safe mode: Skipping add_research_chunks for {len(chunks)} chunks")
+            return []
+            
         chunk_ids = []
         try:
             for i, chunk in enumerate(chunks):
@@ -193,6 +223,11 @@ class PineconeMemory:
         Returns:
             List of relevant chunks with content and metadata
         """
+        # Skip in memory safe mode
+        if self.memory_safe_mode:
+            logger.info("Memory safe mode: Skipping search_research_chunks")
+            return []
+            
         try:
             # Generate query embedding
             query_embedding = self.embedding_model.encode(query).tolist()
@@ -238,6 +273,11 @@ class PineconeMemory:
         Returns:
             vector_id: Unique identifier for the stored topic memory
         """
+        # Skip in memory safe mode
+        if self.memory_safe_mode:
+            logger.info(f"Memory safe mode: Skipping store_topic_memory for {topic}")
+            return "memory_safe_mode_skip"
+            
         try:
             # Create combined content for embedding
             content = f"Topic: {topic}\nSummary: {summary}\nInsights: {' '.join(key_insights)}"
@@ -288,6 +328,11 @@ class PineconeMemory:
         Returns:
             List of relevant topic memories
         """
+        # Skip in memory safe mode
+        if self.memory_safe_mode:
+            logger.info("Memory safe mode: Skipping search_topic_memories")
+            return []
+            
         try:
             # Generate query embedding
             query_embedding = self.embedding_model.encode(query).tolist()

@@ -5,9 +5,16 @@ Optimized for low-memory environments with lazy loading
 """
 
 import logging
+import os
 from typing import List, Union
 
 logger = logging.getLogger(__name__)
+
+# Check if we're in a memory-constrained environment (Render free tier)
+MEMORY_SAFE_MODE = (
+    os.environ.get('RENDER_MEMORY_SAFE', 'false').lower() == 'true' or
+    os.environ.get('MEMORY_SAFE_MODE', 'false').lower() == 'true'
+)
 
 
 class EmbeddingGenerator:
@@ -51,6 +58,9 @@ class EmbeddingGenerator:
     @property
     def model(self):
         """Lazy load the model on first use"""
+        if MEMORY_SAFE_MODE:
+            logger.warning("⚠️ Memory safe mode - skipping model load")
+            return None
         if self._model is None:
             try:
                 logger.info(f"🔧 Loading embedding model: {self.model_name}")
@@ -62,7 +72,7 @@ class EmbeddingGenerator:
                 raise
         return self._model
     
-    def encode(self, texts: Union[str, List[str]], normalize: bool = True) -> Union[List[float], List[List[float]]]:
+    def encode(self, texts: Union[str, List[str]], normalize: bool = True) -> Union[List[float], List[List[float]], None]:
         """
         Encode text(s) into embeddings
         
@@ -71,8 +81,12 @@ class EmbeddingGenerator:
             normalize: Whether to normalize embeddings (default: True for cosine similarity)
             
         Returns:
-            Single embedding list or list of embeddings
+            Single embedding list or list of embeddings, or None in memory safe mode
         """
+        if MEMORY_SAFE_MODE:
+            logger.info("Memory safe mode: Returning None for embeddings")
+            return None
+            
         try:
             if isinstance(texts, str):
                 # Single text
@@ -95,8 +109,12 @@ class EmbeddingGenerator:
             batch_size: Number of texts to process at once (default: 32)
             
         Returns:
-            List of embeddings
+            List of embeddings, or empty list in memory safe mode
         """
+        if MEMORY_SAFE_MODE:
+            logger.info("Memory safe mode: Returning empty list for embed_chunks")
+            return []
+            
         try:
             logger.info(f"📦 Encoding {len(chunks)} chunks in batches of {batch_size}")
             embeddings = self.model.encode(chunks, batch_size=batch_size, normalize_embeddings=True, show_progress_bar=False)
