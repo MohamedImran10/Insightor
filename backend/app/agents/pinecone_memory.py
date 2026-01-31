@@ -153,6 +153,35 @@ class PineconeMemory:
             logger.error(f"Error storing research chunk: {e}")
             raise
     
+    def add_research_chunks(self, chunks: List[str], embeddings: List[List[float]], 
+                           metadata_list: List[Dict[str, Any]], query: str) -> List[str]:
+        """
+        Add multiple research chunks to Pinecone (compatible with MemoryAgent interface)
+        
+        Args:
+            chunks: List of text chunks
+            embeddings: List of embeddings (ignored for Pinecone, we generate our own)
+            metadata_list: List of metadata dicts
+            query: Original research query
+            
+        Returns:
+            List of stored chunk IDs
+        """
+        chunk_ids = []
+        try:
+            for i, chunk in enumerate(chunks):
+                metadata = metadata_list[i] if i < len(metadata_list) else {}
+                metadata["query"] = query
+                chunk_id = self.store_research_chunk(chunk, metadata)
+                chunk_ids.append(chunk_id)
+            
+            logger.info(f"✅ Added {len(chunk_ids)} research chunks to Pinecone")
+            return chunk_ids
+            
+        except Exception as e:
+            logger.error(f"Error adding research chunks: {e}")
+            raise
+    
     def search_research_chunks(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """
         Search for relevant research chunks

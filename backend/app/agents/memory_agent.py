@@ -166,7 +166,9 @@ class MemoryAgent:
                     all_metadata.append(metadata)
                 
                 all_chunks.extend(chunks)
-                all_embeddings.extend(embeddings)
+                # Only extend embeddings if not using Pinecone (which handles embeddings internally)
+                if embeddings is not None:
+                    all_embeddings.extend(embeddings)
             
             # Store in vector database (Weaviate or ChromaDB)
             if all_chunks:
