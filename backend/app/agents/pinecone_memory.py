@@ -49,35 +49,41 @@ class PineconeMemory:
         
     def _initialize_index(self):
         """Initialize Pinecone index if it doesn't exist"""
-        try:
-            # List existing indexes
-            existing_indexes = [index.name for index in self.pc.list_indexes()]
-            
-            # Create main index if it doesn't exist
-            if self.index_name not in existing_indexes:
-                logger.info(f"Creating Pinecone index: {self.index_name}")
-                self.pc.create_index(
-                    name=self.index_name,
-                    dimension=self.embedding_dim,
-                    metric="cosine",
-                    spec=ServerlessSpec(
-                        cloud="aws",
-                        region="us-east-1"
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # List existing indexes
+                existing_indexes = [index.name for index in self.pc.list_indexes()]
+                
+                # Create main index if it doesn't exist
+                if self.index_name not in existing_indexes:
+                    logger.info(f"Creating Pinecone index: {self.index_name}")
+                    self.pc.create_index(
+                        name=self.index_name,
+                        dimension=self.embedding_dim,
+                        metric="cosine",
+                        spec=ServerlessSpec(
+                            cloud="aws",
+                            region="us-east-1"
+                        )
                     )
-                )
-                # Wait for index to be ready
-                logger.info("Waiting for index to be ready...")
-                time.sleep(30)
-            
-            # Connect to index
-            self.index = self.pc.Index(self.index_name)
-            logger.info(f"✅ Connected to Pinecone index: {self.index_name}")
-            
-            logger.info("Pinecone indexes initialized successfully")
-            
-        except Exception as e:
-            logger.error(f"Error initializing Pinecone indexes: {e}")
-            raise
+                    # Wait for index to be ready (reduced for faster startup)
+                    logger.info("Waiting for index to be ready...")
+                    time.sleep(10)  # Reduced from 30 to 10 seconds
+                
+                # Connect to index
+                self.index = self.pc.Index(self.index_name)
+                logger.info(f"✅ Connected to Pinecone index: {self.index_name}")
+                
+                logger.info("Pinecone indexes initialized successfully")
+                return  # Success, exit the retry loop
+                
+            except Exception as e:
+                logger.error(f"Error initializing Pinecone indexes (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)  # Wait before retry
+                else:
+                    raise
     
     def _generate_vector_id(self, content: str) -> str:
         """Generate a unique ID for content based on hash"""
