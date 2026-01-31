@@ -9,7 +9,8 @@ export const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:1076931863510:web:06ec9cbc55c4527abbba77",
 };
 
-export const apiBaseUrl = import.meta.env.VITE_API_URL || "https://insightor.onrender.com";
+// Check both VITE_API_URL and VITE_API_BASE_URL for compatibility
+export const apiBaseUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 if (typeof window !== 'undefined') {
   console.log("✅ Config loaded - API URL:", apiBaseUrl);
