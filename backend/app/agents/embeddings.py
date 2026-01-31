@@ -1,9 +1,9 @@
 """
 Embeddings Module - Handles semantic vector generation using Sentence-Transformers
 Converts text into dense vectors for similarity search and RAG retrieval
+Optimized for low-memory environments with lazy loading
 """
 
-from sentence_transformers import SentenceTransformer
 import logging
 from typing import List, Union
 
@@ -14,6 +14,7 @@ class EmbeddingGenerator:
     """
     Generates embeddings using Sentence-Transformers all-MiniLM-L6-v2 model
     Optimized for semantic search and RAG applications
+    Uses lazy loading to reduce memory footprint on startup
     """
     
     _instance = None
@@ -25,6 +26,7 @@ class EmbeddingGenerator:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
+            cls._instance._model = None
         return cls._instance
     
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
@@ -41,16 +43,24 @@ class EmbeddingGenerator:
         if self._initialized:
             return
         
-        try:
-            logger.info(f"🔧 Loading embedding model: {model_name}")
-            self.model = SentenceTransformer(model_name)
-            self.model_name = model_name
-            self.embedding_dim = 384
-            self._initialized = True
-            logger.info(f"✅ Embedding model loaded successfully (dim={self.embedding_dim})")
-        except Exception as e:
-            logger.error(f"❌ Failed to load embedding model: {str(e)}")
-            raise
+        self.model_name = model_name
+        self.embedding_dim = 384
+        self._initialized = True
+        logger.info(f"📦 Embedding generator initialized (model will load on first use)")
+    
+    @property
+    def model(self):
+        """Lazy load the model on first use"""
+        if self._model is None:
+            try:
+                logger.info(f"🔧 Loading embedding model: {self.model_name}")
+                from sentence_transformers import SentenceTransformer
+                self._model = SentenceTransformer(self.model_name)
+                logger.info(f"✅ Embedding model loaded successfully (dim={self.embedding_dim})")
+            except Exception as e:
+                logger.error(f"❌ Failed to load embedding model: {str(e)}")
+                raise
+        return self._model
     
     def encode(self, texts: Union[str, List[str]], normalize: bool = True) -> Union[List[float], List[List[float]]]:
         """

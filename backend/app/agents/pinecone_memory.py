@@ -2,18 +2,31 @@
 Pinecone Memory Implementation for Research Agent
 Stores research chunks and topic memories using Pinecone vector database
 Uses a single index with namespaces for free tier compatibility
+Optimized for low-memory environments (Render free tier)
 """
 import os
 import json
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from pinecone import Pinecone, ServerlessSpec
-from sentence_transformers import SentenceTransformer
 import hashlib
 import logging
 import time
 
 logger = logging.getLogger(__name__)
+
+# Global lazy-loaded embedding model
+_embedding_model = None
+
+def get_embedding_model():
+    """Lazy load embedding model to save memory on startup"""
+    global _embedding_model
+    if _embedding_model is None:
+        logger.info("🔄 Loading embedding model (lazy)...")
+        from sentence_transformers import SentenceTransformer
+        _embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        logger.info("✅ Embedding model loaded")
+    return _embedding_model
 
 class PineconeMemory:
     def __init__(self, api_key: str, environment: str = "us-east-1", 
@@ -29,13 +42,11 @@ class PineconeMemory:
         self.api_key = api_key
         self.environment = environment
         self.embedding_model_name = embedding_model
+        self._embedding_model = None  # Lazy loaded
+        self.embedding_dim = 384  # all-MiniLM-L6-v2 dimension (known value)
         
         # Initialize Pinecone client
         self.pc = Pinecone(api_key=api_key)
-        
-        # Initialize embedding model
-        self.embedding_model = SentenceTransformer(embedding_model)
-        self.embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
         
         # Single index name (free tier allows only 1 index)
         self.index_name = "insightor"
@@ -44,8 +55,15 @@ class PineconeMemory:
         self.research_namespace = "research-chunks"
         self.topic_namespace = "topic-memories"
         
-        # Initialize index
+        # Initialize index (but don't load embedding model yet)
         self._initialize_index()
+    
+    @property
+    def embedding_model(self):
+        """Lazy load embedding model on first use"""
+        if self._embedding_model is None:
+            self._embedding_model = get_embedding_model()
+        return self._embedding_model
         
     def _initialize_index(self):
         """Initialize Pinecone index if it doesn't exist"""
