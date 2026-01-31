@@ -20,8 +20,8 @@ services:
         value: true
       - key: USE_WEAVIATE
         value: false
-      - key: RENDER_MEMORY_SAFE
-        value: true
+      # Using lightweight embedding model (paraphrase-MiniLM-L3-v2, ~200MB)
+      # This fits within Render free tier 512MB limit
       # Add these in Render Dashboard (secrets):
       # - GOOGLE_API_KEY
       # - TAVILY_API_KEY

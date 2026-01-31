@@ -2,6 +2,7 @@
 Embeddings Module - Handles semantic vector generation using Sentence-Transformers
 Converts text into dense vectors for similarity search and RAG retrieval
 Optimized for low-memory environments with lazy loading
+Uses lightweight paraphrase-MiniLM-L3-v2 model (~200MB) for Render free tier
 """
 
 import logging
@@ -10,16 +11,14 @@ from typing import List, Union
 
 logger = logging.getLogger(__name__)
 
-# Check if we're in a memory-constrained environment (Render free tier)
-MEMORY_SAFE_MODE = (
-    os.environ.get('RENDER_MEMORY_SAFE', 'false').lower() == 'true' or
-    os.environ.get('MEMORY_SAFE_MODE', 'false').lower() == 'true'
-)
+# Lightweight model for Render free tier (512MB limit)
+# paraphrase-MiniLM-L3-v2: ~40MB model, ~200MB memory usage, 384 dimensions
+LIGHTWEIGHT_MODEL = "paraphrase-MiniLM-L3-v2"
 
 
 class EmbeddingGenerator:
     """
-    Generates embeddings using Sentence-Transformers all-MiniLM-L6-v2 model
+    Generates embeddings using Sentence-Transformers paraphrase-MiniLM-L3-v2 model
     Optimized for semantic search and RAG applications
     Uses lazy loading to reduce memory footprint on startup
     """
@@ -36,43 +35,41 @@ class EmbeddingGenerator:
             cls._instance._model = None
         return cls._instance
     
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+    def __init__(self, model_name: str = None):
         """
         Initialize embedding generator with Sentence-Transformers model
         
         Args:
-            model_name: HuggingFace model identifier (default: all-MiniLM-L6-v2)
-                       - Lightweight (22M parameters)
+            model_name: HuggingFace model identifier (default: paraphrase-MiniLM-L3-v2)
+                       - Ultra-lightweight (~40MB)
                        - Fast inference
                        - 384-dimensional embeddings
                        - Good for semantic search
+                       - Fits in Render free tier (512MB)
         """
         if self._initialized:
             return
         
-        self.model_name = model_name
+        self.model_name = model_name or LIGHTWEIGHT_MODEL
         self.embedding_dim = 384
         self._initialized = True
-        logger.info(f"📦 Embedding generator initialized (model will load on first use)")
+        logger.info(f"📦 Embedding generator initialized with {self.model_name} (model will load on first use)")
     
     @property
     def model(self):
         """Lazy load the model on first use"""
-        if MEMORY_SAFE_MODE:
-            logger.warning("⚠️ Memory safe mode - skipping model load")
-            return None
         if self._model is None:
             try:
-                logger.info(f"🔧 Loading embedding model: {self.model_name}")
+                logger.info(f"🔧 Loading lightweight embedding model: {self.model_name}")
                 from sentence_transformers import SentenceTransformer
                 self._model = SentenceTransformer(self.model_name)
-                logger.info(f"✅ Embedding model loaded successfully (dim={self.embedding_dim})")
+                logger.info(f"✅ Lightweight embedding model loaded (~200MB memory, dim={self.embedding_dim})")
             except Exception as e:
                 logger.error(f"❌ Failed to load embedding model: {str(e)}")
                 raise
         return self._model
     
-    def encode(self, texts: Union[str, List[str]], normalize: bool = True) -> Union[List[float], List[List[float]], None]:
+    def encode(self, texts: Union[str, List[str]], normalize: bool = True) -> Union[List[float], List[List[float]]]:
         """
         Encode text(s) into embeddings
         
@@ -81,12 +78,8 @@ class EmbeddingGenerator:
             normalize: Whether to normalize embeddings (default: True for cosine similarity)
             
         Returns:
-            Single embedding list or list of embeddings, or None in memory safe mode
+            Single embedding list or list of embeddings
         """
-        if MEMORY_SAFE_MODE:
-            logger.info("Memory safe mode: Returning None for embeddings")
-            return None
-            
         try:
             if isinstance(texts, str):
                 # Single text
@@ -109,12 +102,8 @@ class EmbeddingGenerator:
             batch_size: Number of texts to process at once (default: 32)
             
         Returns:
-            List of embeddings, or empty list in memory safe mode
+            List of embeddings
         """
-        if MEMORY_SAFE_MODE:
-            logger.info("Memory safe mode: Returning empty list for embed_chunks")
-            return []
-            
         try:
             logger.info(f"📦 Encoding {len(chunks)} chunks in batches of {batch_size}")
             embeddings = self.model.encode(chunks, batch_size=batch_size, normalize_embeddings=True, show_progress_bar=False)
