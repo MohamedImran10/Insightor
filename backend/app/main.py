@@ -234,12 +234,19 @@ ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "https://insightor-research-assistant.vercel.app",
     "https://insightor-omega.vercel.app",
+    "https://insightor.vercel.app",
+    # Allow all Vercel preview deployments
+    "https://*.vercel.app",
 ]
 
-# Add CORS middleware
+# Filter out None values and wildcards for initial list
+filtered_origins = [origin for origin in ALLOWED_ORIGINS if origin and not origin.startswith("https://*")]
+
+# Add CORS middleware with flexible origin handling
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=filtered_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",  # Allow all Vercel subdomains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
