@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
+from functools import lru_cache
 
 
 class Settings(BaseSettings):
@@ -50,6 +51,7 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
+@lru_cache()
 def get_settings() -> Settings:
-    """Get application settings singleton"""
+    """Get application settings singleton (cached for performance)"""
     return settings
