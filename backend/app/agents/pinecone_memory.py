@@ -499,19 +499,28 @@ class PineconeMemory:
             logger.error(f"Error clearing data: {e}")
             raise
     
-    def retrieve_similar_chunks(self, query_embedding: List[float], n_results: int = 5) -> Dict[str, Any]:
+    def retrieve_similar_chunks(self, query_embedding: List[float] = None, query: str = None, n_results: int = 5) -> Dict[str, Any]:
         """
-        Retrieve similar chunks using pre-computed embedding
+        Retrieve similar chunks using pre-computed embedding or query text
         Compatible with ChromaDB interface
         
         Args:
-            query_embedding: Pre-computed query embedding
+            query_embedding: Pre-computed query embedding (can be None for Pinecone)
+            query: Query text (used if query_embedding is None)
             n_results: Number of results to return
             
         Returns:
             Dictionary with chunks and metadata
         """
         try:
+            # If no embedding provided, generate one from query
+            if query_embedding is None:
+                if query:
+                    query_embedding = self.embedding_model.encode(query).tolist()
+                else:
+                    logger.warning("No query_embedding or query provided to retrieve_similar_chunks")
+                    return {"chunks": [], "metadatas": []}
+            
             results = self.index.query(
                 vector=query_embedding,
                 top_k=n_results,

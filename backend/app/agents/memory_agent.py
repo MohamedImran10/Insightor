@@ -206,12 +206,13 @@ class MemoryAgent:
         try:
             logger.info(f"🔍 Querying memory for similar chunks (n={n_results})")
             
-            # Embed query
+            # Embed query (returns None for Pinecone which handles internally)
             query_embedding = self.embed_text(query)
             
-            # Retrieve similar chunks
+            # Retrieve similar chunks - pass query for Pinecone which may need to generate embedding
             results = self.vector_memory.retrieve_similar_chunks(
                 query_embedding=query_embedding,
+                query=query,  # Pass query text for Pinecone fallback
                 n_results=n_results
             )
             
