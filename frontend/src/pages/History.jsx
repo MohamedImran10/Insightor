@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
+import { useTheme } from '../hooks/useTheme.jsx';
 import { apiGet, api } from '../api/client.js';
 import { History, ArrowLeft, Trash2, Clock, Search, RefreshCw, Calendar, FileText } from 'lucide-react';
 
 const HistoryPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { darkMode } = useTheme();
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedHistory, setSelectedHistory] = useState(null);
