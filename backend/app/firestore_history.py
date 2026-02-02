@@ -1,5 +1,7 @@
 """
 Firestore integration for storing user search history
+Note: Firestore requires billing to be enabled. If billing is not enabled,
+history saving will be disabled but the app will continue to work.
 """
 import firebase_admin
 from firebase_admin import firestore
@@ -7,16 +9,26 @@ from google.cloud.firestore_v1 import Client
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
 # Database name - use your custom database name
 FIRESTORE_DATABASE = "insightordb"
 
+# Flag to enable/disable Firestore history (set to false if billing is not enabled)
+FIRESTORE_ENABLED = os.getenv('FIRESTORE_ENABLED', 'false').lower() == 'true'
+
 class FirestoreHistoryManager:
     """Manages user search history in Firestore"""
     
     def __init__(self):
+        # If Firestore is disabled, skip initialization
+        if not FIRESTORE_ENABLED:
+            logger.info("ℹ️ Firestore history is disabled (FIRESTORE_ENABLED=false)")
+            self.db = None
+            return
+            
         try:
             # Initialize Firestore client with specific database
             # Get the default app credentials
@@ -54,16 +66,9 @@ class FirestoreHistoryManager:
             test_doc.delete()
             
         except Exception as e:
-            error_msg = str(e).lower()
-            if "does not exist" in error_msg or "database" in error_msg:
-                logger.error(f"❌ Firestore database '{FIRESTORE_DATABASE}' connection failed!")
-                logger.warning("🔧 To fix this issue, verify the database name matches:")
-                logger.warning(f"   Current database name: {FIRESTORE_DATABASE}")
-                logger.warning("   Check: https://console.firebase.google.com/project/research-agent-b7cb0/firestore")
-            else:
-                logger.error(f"❌ Firestore database test failed: {e}")
-            # Don't raise here - let the app continue without Firestore
-            pass
+            # Silently disable Firestore if billing not enabled or database doesn't exist
+            logger.info("ℹ️ Firestore history disabled (billing may not be enabled)")
+            self.db = None
     
     def _initialize_collections(self):
         """Initialize basic collection structure"""
@@ -124,7 +129,8 @@ class FirestoreHistoryManager:
             return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to save search history: {e}")
+            # Silent fail - don't log errors to avoid confusion when billing is not enabled
+            logger.debug(f"History save skipped: {e}")
             return False
     
     async def get_search_history(
