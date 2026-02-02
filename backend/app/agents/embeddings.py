@@ -1,7 +1,7 @@
 """
 Embeddings Module - Handles semantic vector generation using Sentence-Transformers
 Converts text into dense vectors for similarity search and RAG retrieval
-Optimized for low-memory environments with lazy loading
+    Optimized for low-memory environments with lazy loading
 Uses lightweight paraphrase-MiniLM-L3-v2 model (~200MB) for Render free tier
 """
 

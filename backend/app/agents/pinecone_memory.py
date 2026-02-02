@@ -284,6 +284,63 @@ class PineconeMemory:
             logger.error(f"Error storing topic memory: {e}")
             raise
     
+    def add_topic_memory(self, query: str, summary: str, embedding: List[float] = None,
+                        insights: List[str] = None, key_findings: str = "", 
+                        sources_count: int = 0) -> str:
+        """
+        Add topic memory - interface compatible with memory_agent.py
+        
+        Args:
+            query: Original query/topic
+            summary: Summary of the research
+            embedding: Pre-computed embedding (optional, will generate if None)
+            insights: List of key insights
+            key_findings: Key findings text
+            sources_count: Number of sources used
+            
+        Returns:
+            vector_id: Unique identifier for the stored topic memory
+        """
+        try:
+            # Use provided embedding or generate new one
+            if embedding is None:
+                content = f"Query: {query}\nSummary: {summary}\nFindings: {key_findings}"
+                embedding = self.embedding_model.encode(content).tolist()
+            
+            # Generate unique ID
+            vector_id = self._generate_vector_id(f"{query}_{summary[:100]}")
+            
+            # Prepare metadata
+            pinecone_metadata = {
+                "topic": query[:200],
+                "query": query[:500],
+                "summary": summary[:1000],
+                "key_findings": key_findings[:500] if key_findings else "",
+                "key_insights": json.dumps(insights[:10] if insights else []),
+                "sources_count": sources_count,
+                "timestamp": datetime.now().isoformat(),
+                "type": "topic_memory"
+            }
+            
+            # Store in Pinecone using namespace
+            self.index.upsert(
+                vectors=[
+                    {
+                        "id": vector_id,
+                        "values": embedding,
+                        "metadata": pinecone_metadata
+                    }
+                ],
+                namespace=self.topic_namespace
+            )
+            
+            logger.info(f"Added topic memory for query: {query[:50]}...")
+            return vector_id
+            
+        except Exception as e:
+            logger.error(f"Error adding topic memory: {e}")
+            raise
+    
     def retrieve_topic_memory(self, query_embedding: List[float], n_results: int = 3) -> Dict[str, Any]:
         """
         Retrieve similar topic memories based on embedding
