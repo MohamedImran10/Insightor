@@ -63,7 +63,6 @@ try:
     from app.auth import FirebaseAuth, initialize_firebase, get_firebase_auth
     from app.auth_middleware import initialize_auth_middleware
     from app.dependencies import get_current_user, get_user_id
-    from app.firestore_history import get_history_manager
     FIREBASE_AVAILABLE = True
     logger.info("✅ Firebase modules loaded")
 except Exception as e:
@@ -72,7 +71,11 @@ except Exception as e:
     def initialize_auth_middleware(**kwargs): pass
     def get_current_user(): return None
     def get_user_id(): return "anonymous"
-    def get_history_manager(): return None
+
+# Use Pinecone for history (FREE - no billing required)
+from app.pinecone_history import get_pinecone_history_manager
+def get_history_manager():
+    return get_pinecone_history_manager()
 
 
 # Lazy loader for heavy modules
@@ -916,72 +919,54 @@ async def get_search_history(
         )
 
 
-@app.post("/setup/firestore", tags=["Setup"])
-async def setup_firestore():
+@app.post("/setup/history", tags=["Setup"])
+async def setup_history():
     """
-    Initialize Firestore database manually
-    This endpoint can be called to test and initialize Firestore
+    Test history storage setup (uses Pinecone - FREE)
+    This endpoint can be called to test history functionality
     """
     try:
         history_manager = get_history_manager()
         if not history_manager:
             return {
                 "status": "error",
-                "message": "History manager not available - check Firebase credentials"
+                "message": "History manager not available"
             }
         
-        if not history_manager.db:
+        if not history_manager.index:
             return {
                 "status": "error", 
-                "message": "Firestore database not initialized. Please create database in Firebase Console first.",
-                "instructions": [
-                    "1. Go to: https://console.firebase.google.com/project/research-agent-b7cb0/firestore",
-                    "2. Click 'Create database'",
-                    "3. Choose 'Start in test mode'", 
-                    "4. Select a location (us-central1 recommended)",
-                    "5. Try this endpoint again"
-                ]
+                "message": "Pinecone index not initialized. Check PINECONE_API_KEY environment variable."
             }
         
-        # Test database by creating a sample document
-        test_doc = history_manager.db.collection('_setup').document('test')
-        test_doc.set({
-            'setup_time': firestore.SERVER_TIMESTAMP,
-            'message': 'Firestore successfully initialized!'
-        })
+        # Test by saving a sample entry
+        success = await history_manager.save_search_history(
+            user_id="test_user",
+            query="Test query",
+            response="Test response",
+            sources=[{"title": "Test", "url": "https://example.com"}]
+        )
         
-        # Clean up test document
-        test_doc.delete()
-        
-        logger.info("✅ Firestore database setup successful")
-        return {
-            "status": "success",
-            "message": "Firestore database is working correctly!",
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        if success:
+            logger.info("✅ Pinecone history storage working")
+            return {
+                "status": "success",
+                "message": "History storage (Pinecone) is working correctly!",
+                "storage": "Pinecone (FREE tier)",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        else:
+            return {
+                "status": "warning",
+                "message": "History save returned false - check Pinecone connection"
+            }
         
     except Exception as e:
-        logger.error(f"❌ Firestore setup failed: {e}")
-        error_msg = str(e)
-        
-        if "does not exist" in error_msg.lower():
-            return {
-                "status": "error",
-                "message": "Firestore database does not exist",
-                "error": error_msg,
-                "instructions": [
-                    "Please create the Firestore database manually:",
-                    "1. Go to: https://console.firebase.google.com/project/research-agent-b7cb0/firestore", 
-                    "2. Click 'Create database'",
-                    "3. Choose 'Start in test mode'",
-                    "4. Select a location (us-central1 recommended)"
-                ]
-            }
-        
+        logger.error(f"❌ History setup test failed: {e}")
         return {
             "status": "error",
-            "message": f"Firestore setup failed: {error_msg}",
-            "error": error_msg
+            "message": f"History setup failed: {str(e)}",
+            "error": str(e)
         }
 
 
