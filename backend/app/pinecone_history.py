@@ -105,6 +105,7 @@ class PineconeHistoryManager:
                 "response": response[:3000],  # Limit response length
                 "sources": json.dumps(sources[:10]),  # Limit sources
                 "insights": json.dumps((insights or [])[:5]),  # Limit insights
+                "memory_chunks": json.dumps([(chunk[:200] if isinstance(chunk, str) else {"content": str(chunk.get("content", ""))[:200], "metadata": chunk.get("metadata", {})}) for chunk in (memory_chunks or [])][:3]),  # Store first 3 memory chunks
                 "timestamp": timestamp,
                 "sources_count": len(sources),
             }
@@ -175,6 +176,8 @@ class PineconeHistoryManager:
                     "response": meta.get("response", ""),
                     "sources": json.loads(meta.get("sources", "[]")),
                     "insights": json.loads(meta.get("insights", "[]")),
+                    "memory_chunks": json.loads(meta.get("memory_chunks", "[]")),
+                    "search_results": json.loads(meta.get("sources", "[]")),
                     "timestamp": meta.get("timestamp", ""),
                     "sources_count": meta.get("sources_count", 0),
                 }
