@@ -58,8 +58,10 @@ class PineconeHistoryManager:
     
     def _create_dummy_embedding(self) -> List[float]:
         """Create a dummy embedding for history storage (not used for search)"""
-        # We use a simple hash-based embedding since history doesn't need semantic search
-        return [0.0] * self.embedding_dim
+        # Use small random-ish values instead of zeros for better Pinecone compatibility
+        import random
+        random.seed(42)  # Consistent seed for reproducibility
+        return [random.uniform(-0.01, 0.01) for _ in range(self.embedding_dim)]
     
     async def save_search_history(
         self, 
@@ -120,7 +122,7 @@ class PineconeHistoryManager:
                 namespace=self.namespace
             )
             
-            logger.info(f"✅ Saved search history for user {user_id[:8]}...")
+            logger.info(f"✅ Saved search history for user {user_id[:8]}... (id: {vector_id[:12]}...)")
             return True
             
         except Exception as e:
@@ -147,13 +149,21 @@ class PineconeHistoryManager:
         
         try:
             # Query with dummy vector and filter by user_id
+            # Pinecone filter syntax uses $eq for equality
             results = self.index.query(
                 vector=self._create_dummy_embedding(),
                 top_k=limit * 2,  # Get more to filter
                 include_metadata=True,
                 namespace=self.namespace,
-                filter={"user_id": user_id, "type": "search_history"}
+                filter={
+                    "$and": [
+                        {"user_id": {"$eq": user_id}},
+                        {"type": {"$eq": "search_history"}}
+                    ]
+                }
             )
+            
+            logger.info(f"📜 Pinecone query returned {len(results.matches)} matches for user {user_id[:8]}...")
             
             # Parse results
             history = []
