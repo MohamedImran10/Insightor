@@ -217,9 +217,21 @@ class MemoryAgent:
             )
             
             chunks = results.get("chunks", [])
-            logger.info(f"✅ Retrieved {len(chunks)} relevant chunks")
+            metadatas = results.get("metadatas", [])
             
-            return chunks
+            # Format chunks with metadata
+            formatted_chunks = []
+            for i, chunk in enumerate(chunks):
+                meta = metadatas[i] if i < len(metadatas) else {}
+                formatted_chunks.append({
+                    "content": chunk,
+                    "metadata": meta,
+                    "similarity": meta.get("score", 0.5)  # Pinecone doesn't return similarity in same way
+                })
+            
+            logger.info(f"✅ Retrieved {len(formatted_chunks)} relevant chunks")
+            
+            return formatted_chunks
             
         except Exception as e:
             logger.error(f"❌ Error querying memory: {str(e)}")
@@ -253,9 +265,21 @@ class MemoryAgent:
             )
             
             memories = results.get("memories", [])
-            logger.info(f"✅ Retrieved {len(memories)} related past research summaries")
             
-            return memories
+            # Format memories for format_memory_context
+            formatted_memories = []
+            for memory in memories:
+                formatted_memories.append({
+                    "summary": memory.get("summary", ""),
+                    "similarity": memory.get("score", 0.5),
+                    "metadata": {
+                        "query": memory.get("topic", "Unknown Topic")
+                    }
+                })
+            
+            logger.info(f"✅ Retrieved {len(formatted_memories)} related past research summaries")
+            
+            return formatted_memories
             
         except Exception as e:
             logger.error(f"❌ Error querying topic memory: {str(e)}")
