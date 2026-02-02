@@ -96,6 +96,25 @@ class PineconeHistoryManager:
             timestamp = datetime.utcnow().isoformat()
             vector_id = self._generate_id(user_id, query, timestamp)
             
+            # Process memory chunks to preserve structure while limiting size
+            processed_chunks = []
+            if memory_chunks:
+                for chunk in memory_chunks[:3]:  # Only store first 3
+                    if isinstance(chunk, str):
+                        # If it's a string, create a minimal chunk object
+                        processed_chunks.append({
+                            "content": chunk[:300],  # Truncate content
+                            "metadata": {},
+                            "similarity": 0
+                        })
+                    elif isinstance(chunk, dict):
+                        # If it's a dict, preserve structure
+                        processed_chunks.append({
+                            "content": str(chunk.get("content", ""))[:300],
+                            "metadata": chunk.get("metadata", {}),
+                            "similarity": chunk.get("similarity", 0)
+                        })
+            
             # Prepare metadata (Pinecone has 40KB limit per vector)
             # Truncate long fields to fit
             metadata = {
@@ -105,7 +124,7 @@ class PineconeHistoryManager:
                 "response": response[:3000],  # Limit response length
                 "sources": json.dumps(sources[:10]),  # Limit sources
                 "insights": json.dumps((insights or [])[:5]),  # Limit insights
-                "memory_chunks": json.dumps([(chunk[:200] if isinstance(chunk, str) else {"content": str(chunk.get("content", ""))[:200], "metadata": chunk.get("metadata", {})}) for chunk in (memory_chunks or [])][:3]),  # Store first 3 memory chunks
+                "memory_chunks": json.dumps(processed_chunks),  # Store processed chunks
                 "timestamp": timestamp,
                 "sources_count": len(sources),
             }
