@@ -284,6 +284,50 @@ class PineconeMemory:
             logger.error(f"Error storing topic memory: {e}")
             raise
     
+    def retrieve_topic_memory(self, query_embedding: List[float], n_results: int = 3) -> Dict[str, Any]:
+        """
+        Retrieve similar topic memories based on embedding
+        
+        Args:
+            query_embedding: Query embedding vector (can be None for Pinecone which handles embeddings)
+            n_results: Number of results to return
+            
+        Returns:
+            Dictionary with memories list
+        """
+        try:
+            # If query_embedding is None, return empty (Pinecone uses its own embeddings via search_topic_memories)
+            if query_embedding is None:
+                return {"memories": []}
+            
+            # Search in Pinecone using namespace
+            results = self.index.query(
+                vector=query_embedding,
+                top_k=n_results,
+                include_metadata=True,
+                namespace=self.topic_namespace
+            )
+            
+            # Format results
+            memories = []
+            for match in results.matches:
+                memory = {
+                    "topic": match.metadata.get("topic", ""),
+                    "summary": match.metadata.get("summary", ""),
+                    "related_queries": json.loads(match.metadata.get("related_queries", "[]")),
+                    "key_insights": json.loads(match.metadata.get("key_insights", "[]")),
+                    "timestamp": match.metadata.get("timestamp", ""),
+                    "score": float(match.score)
+                }
+                memories.append(memory)
+            
+            logger.info(f"Retrieved {len(memories)} topic memories")
+            return {"memories": memories}
+            
+        except Exception as e:
+            logger.error(f"Error retrieving topic memory: {e}")
+            return {"memories": []}
+    
     def search_topic_memories(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:
         """
         Search for relevant topic memories
