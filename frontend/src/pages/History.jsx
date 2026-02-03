@@ -336,21 +336,41 @@ const HistoryPage = () => {
                           🧠 Past Relevant Chunks ({selectedHistory.memory_chunks.length})
                         </h4>
                         <div className="space-y-2 max-h-40 overflow-y-auto">
-                          {selectedHistory.memory_chunks.slice(0, 3).map((chunk, idx) => (
-                            <div key={`chunk-${idx}`} className="text-xs bg-amber-50 dark:bg-amber-900/30 rounded p-2 border border-amber-200 dark:border-amber-700">
-                              <div className="font-medium text-amber-900 dark:text-amber-200 truncate">
-                                {chunk.metadata?.title || chunk.title || `Memory ${idx + 1}`}
-                              </div>
-                              <div className="text-amber-800 dark:text-amber-300 text-xs mt-1 line-clamp-2">
-                                {chunk.content || chunk.text || 'No content'}
-                              </div>
-                              {chunk.similarity !== undefined && (
-                                <div className="text-amber-700 dark:text-amber-400 text-xs mt-1">
-                                  Similarity: {typeof chunk.similarity === 'number' ? Math.round(chunk.similarity * 100) : chunk.similarity}%
+                          {selectedHistory.memory_chunks.slice(0, 3).map((chunk, idx) => {
+                            // Extract URL from metadata or content
+                            const urlFromMetadata = chunk.metadata?.url || chunk.metadata?.link;
+                            const contentWithLinks = chunk.content || '';
+                            const urlRegex = /(https?:\/\/[^\s]+)/g;
+                            const urlsInContent = contentWithLinks.match(urlRegex) || [];
+                            const firstUrlInContent = urlsInContent[0];
+                            const displayUrl = urlFromMetadata || firstUrlInContent;
+                            
+                            return (
+                              <div key={`chunk-${idx}`} className="text-xs bg-amber-50 dark:bg-amber-900/30 rounded p-2 border border-amber-200 dark:border-amber-700">
+                                <div className="font-medium text-amber-900 dark:text-amber-200 truncate">
+                                  {chunk.metadata?.title || chunk.title || `Memory ${idx + 1}`}
                                 </div>
-                              )}
-                            </div>
-                          ))}
+                                {displayUrl && (
+                                  <a
+                                    href={displayUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline transition-colors text-xs mt-1"
+                                  >
+                                    🔗 {displayUrl.replace(/^https?:\/\/(www\.)?/, '').substring(0, 40)}...
+                                  </a>
+                                )}
+                                <div className="text-amber-800 dark:text-amber-300 text-xs mt-1 line-clamp-2">
+                                  {chunk.content || chunk.text || 'No content'}
+                                </div>
+                                {chunk.similarity !== undefined && (
+                                  <div className="text-amber-700 dark:text-amber-400 text-xs mt-1">
+                                    Similarity: {typeof chunk.similarity === 'number' ? Math.round(chunk.similarity * 100) : chunk.similarity}%
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}

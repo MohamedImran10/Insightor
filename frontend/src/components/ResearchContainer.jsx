@@ -273,6 +273,17 @@ const ResearchContainer = ({ query, loading, results, summary, insights, memoryC
                                            similarityPercent >= 40 ? '📎 Somewhat Related' :
                                            '🔗 Loosely Connected';
                         
+                        // Extract URL from metadata or content
+                        const urlFromMetadata = chunk.metadata?.url || chunk.metadata?.link;
+                        const contentWithLinks = chunk.content || '';
+                        
+                        // Find URLs in content (simple regex for http/https)
+                        const urlRegex = /(https?:\/\/[^\s]+)/g;
+                        const urlsInContent = contentWithLinks.match(urlRegex) || [];
+                        const firstUrlInContent = urlsInContent[0];
+                        
+                        const displayUrl = urlFromMetadata || firstUrlInContent;
+                        
                         return (
                           <motion.div
                             key={index}
@@ -287,16 +298,20 @@ const ResearchContainer = ({ query, loading, results, summary, insights, memoryC
                                 <h3 className="font-bold text-amber-900 dark:text-amber-200 text-lg mb-1">
                                   {chunk.metadata?.title || 'Previous Research'}
                                 </h3>
-                                {chunk.metadata?.url && (
+                                {displayUrl && (
                                   <motion.a
-                                    href={chunk.metadata.url}
+                                    href={displayUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline transition-colors"
                                     whileHover={{ scale: 1.02 }}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      window.open(displayUrl, '_blank');
+                                    }}
                                   >
                                     <ExternalLink className="w-3 h-3" />
-                                    {chunk.metadata.url}
+                                    {displayUrl.replace(/^https?:\/\/(www\.)?/, '').substring(0, 50)}...
                                   </motion.a>
                                 )}
                               </div>
