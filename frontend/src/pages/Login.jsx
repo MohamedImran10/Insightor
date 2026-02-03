@@ -16,6 +16,18 @@ const Login = () => {
   const navigate = useNavigate();
   const { success, error: showError } = useToast();
 
+  // Force light mode on auth pages
+  useEffect(() => {
+    // Remove dark mode when entering login page
+    document.documentElement.classList.remove('dark');
+    document.body.classList.remove('dark');
+    
+    return () => {
+      // Don't restore dark mode - let theme context handle it
+      // This ensures light theme persists during auth flow
+    };
+  }, []);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
