@@ -16,22 +16,6 @@ const Login = () => {
   const navigate = useNavigate();
   const { success, error: showError } = useToast();
 
-  // Force light mode on auth pages
-  useEffect(() => {
-    const wasDark = document.documentElement.classList.contains('dark');
-    document.documentElement.classList.remove('dark');
-    document.body.classList.remove('dark');
-    
-    return () => {
-      // Restore dark mode when leaving if it was enabled
-      const savedDarkMode = localStorage.getItem('darkMode');
-      if (savedDarkMode === 'true') {
-        document.documentElement.classList.add('dark');
-        document.body.classList.add('dark');
-      }
-    };
-  }, []);
-
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
