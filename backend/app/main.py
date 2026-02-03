@@ -904,6 +904,11 @@ async def get_search_history(
         history = await history_manager.get_search_history(user_id, limit)
         
         logger.info(f"✅ Retrieved {len(history)} history entries for user {user_id[:8]}")
+        
+        # Log details about memory_chunks in response
+        for idx, item in enumerate(history[:3]):  # Log first 3 items
+            logger.info(f"  Entry {idx}: query='{item.get('query', '')[:30]}...', memory_chunks={len(item.get('memory_chunks', []))} chunks")
+        
         return {
             "status": "success",
             "user_id": user_id,

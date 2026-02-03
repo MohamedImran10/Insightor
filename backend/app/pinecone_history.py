@@ -189,22 +189,42 @@ class PineconeHistoryManager:
             history = []
             for match in results.matches:
                 meta = match.metadata
+                
+                # Helper function to safely parse JSON
+                def safe_json_parse(value, default=None):
+                    if default is None:
+                        default = []
+                    if value is None or value == "":
+                        return default
+                    if isinstance(value, (list, dict)):
+                        return value
+                    if isinstance(value, str):
+                        try:
+                            return json.loads(value)
+                        except (json.JSONDecodeError, TypeError):
+                            logger.debug(f"Failed to parse JSON: {value}")
+                            return default
+                    return default
+                
                 entry = {
                     "id": match.id,
                     "query": meta.get("query", ""),
                     "response": meta.get("response", ""),
-                    "sources": json.loads(meta.get("sources", "[]")),
-                    "insights": json.loads(meta.get("insights", "[]")),
-                    "memory_chunks": json.loads(meta.get("memory_chunks", "[]")),
-                    "search_results": json.loads(meta.get("sources", "[]")),
+                    "sources": safe_json_parse(meta.get("sources")),
+                    "insights": safe_json_parse(meta.get("insights")),
+                    "memory_chunks": safe_json_parse(meta.get("memory_chunks")),
+                    "search_results": safe_json_parse(meta.get("sources")),
                     "timestamp": meta.get("timestamp", ""),
                     "sources_count": meta.get("sources_count", 0),
                 }
+                
+                logger.debug(f"Parsed history entry - Query: {entry['query'][:50]}..., Memory chunks: {len(entry['memory_chunks'])}")
                 history.append(entry)
             
             # Sort by timestamp (newest first)
             history.sort(key=lambda x: x["timestamp"], reverse=True)
             
+            logger.info(f"Returning {len(history[:limit])} history entries")
             return history[:limit]
             
         except Exception as e:
