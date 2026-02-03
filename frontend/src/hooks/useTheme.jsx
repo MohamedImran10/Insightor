@@ -4,17 +4,18 @@ const ThemeContext = createContext(null);
 
 export const ThemeProvider = ({ children }) => {
   const [darkMode, setDarkMode] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  // Initialize from localStorage on mount
+  // Initialize theme on mount only
   useEffect(() => {
-    const saved = localStorage.getItem('darkMode');
-    const isDark = saved === 'true';
+    // Get saved theme preference
+    const savedTheme = localStorage.getItem('darkMode');
+    const isDark = savedTheme === 'true';
     
+    // Set state
     setDarkMode(isDark);
-    setMounted(true);
     
-    // Apply the correct theme immediately
+    // Apply to document
     if (isDark) {
       document.documentElement.classList.add('dark');
       document.body.classList.add('dark');
@@ -22,28 +23,30 @@ export const ThemeProvider = ({ children }) => {
       document.documentElement.classList.remove('dark');
       document.body.classList.remove('dark');
     }
+    
+    setIsInitialized(true);
+    console.log('Theme initialized:', isDark ? 'dark' : 'light');
   }, []);
 
-  // Update document classes when darkMode changes
+  // Update DOM when darkMode state changes
   useEffect(() => {
-    if (!mounted) return; // Don't run until initialization is complete
+    if (!isInitialized) return;
     
     if (darkMode) {
+      console.log('Applying dark mode');
       document.documentElement.classList.add('dark');
       document.body.classList.add('dark');
     } else {
+      console.log('Applying light mode');
       document.documentElement.classList.remove('dark');
       document.body.classList.remove('dark');
     }
     
-    // Save to localStorage
     localStorage.setItem('darkMode', JSON.stringify(darkMode));
-    
-    console.log('Theme changed to:', darkMode ? 'dark' : 'light');
-  }, [darkMode, mounted]);
+  }, [darkMode, isInitialized]);
 
   const toggleDarkMode = () => {
-    console.log('Toggle dark mode called');
+    console.log('Toggling dark mode from', darkMode, 'to', !darkMode);
     setDarkMode(prev => !prev);
   };
 
