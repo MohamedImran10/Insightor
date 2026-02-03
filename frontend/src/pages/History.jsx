@@ -27,6 +27,12 @@ const HistoryPage = () => {
         // Debug: Log the first history item to see structure
         if (response.history && response.history.length > 0) {
           console.log('📋 First history item structure:', response.history[0]);
+          console.log('📋 First item memory_chunks:', response.history[0].memory_chunks);
+          console.log('📋 Memory chunks type:', typeof response.history[0].memory_chunks);
+          console.log('📋 Memory chunks length:', response.history[0].memory_chunks?.length || 0);
+          if (response.history[0].memory_chunks && response.history[0].memory_chunks.length > 0) {
+            console.log('📋 First memory chunk:', response.history[0].memory_chunks[0]);
+          }
         }
       }
     } catch (err) {
@@ -39,6 +45,15 @@ const HistoryPage = () => {
   useEffect(() => {
     fetchHistory();
   }, [user?.uid]);
+
+  // Log when selectedHistory changes
+  useEffect(() => {
+    if (selectedHistory) {
+      console.log('🔍 Selected history changed:', selectedHistory);
+      console.log('🔍 Memory chunks in selected:', selectedHistory.memory_chunks);
+      console.log('🔍 Memory chunks length:', selectedHistory.memory_chunks?.length || 0);
+    }
+  }, [selectedHistory]);
 
   // Delete history item
   const handleDeleteHistory = async (historyId, e) => {
@@ -210,7 +225,11 @@ const HistoryPage = () => {
                         {items.map((item) => (
                           <motion.div
                             key={item.id}
-                            onClick={() => setSelectedHistory(item)}
+                            onClick={() => {
+                              console.log('📋 Selected history item:', item);
+                              console.log('📋 Selected item memory_chunks:', item.memory_chunks);
+                              setSelectedHistory(item);
+                            }}
                             className={`p-4 cursor-pointer transition-all duration-200 ${
                               selectedHistory?.id === item.id 
                                 ? 'bg-blue-100 dark:bg-blue-900/50 border-l-4 border-blue-500' 
