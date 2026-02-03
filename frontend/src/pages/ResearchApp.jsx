@@ -42,6 +42,7 @@ const ResearchApp = () => {
         setHistoryLoaded(true);
         
         console.log('✅ Loaded history from navigation state:', historyData.query);
+        console.log('✅ Memory chunks loaded:', historyData.memory_chunks?.length || 0, 'chunks');
         return;
       }
       
@@ -65,6 +66,7 @@ const ResearchApp = () => {
           // Clear from session storage
           sessionStorage.removeItem('loadedHistory');
           console.log('✅ Loaded history data from session:', historyData.query);
+          console.log('✅ Memory chunks loaded:', historyData.memory_chunks?.length || 0, 'chunks');
           console.log('✅ Loaded results:', historyData.search_results || historyData.sources || []);
           console.log('✅ Loaded summary:', historyData.response || '');
         } catch (err) {

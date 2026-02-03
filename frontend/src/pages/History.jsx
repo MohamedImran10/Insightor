@@ -310,6 +310,32 @@ const HistoryPage = () => {
                       </div>
                     )}
 
+                    {/* Past Relevant Chunks */}
+                    {selectedHistory.memory_chunks && selectedHistory.memory_chunks.length > 0 && (
+                      <div className="mb-6">
+                        <h4 className="font-semibold text-gray-700 dark:text-gray-200 mb-2">
+                          🧠 Past Relevant Chunks ({selectedHistory.memory_chunks.length})
+                        </h4>
+                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                          {selectedHistory.memory_chunks.slice(0, 3).map((chunk, idx) => (
+                            <div key={`chunk-${idx}`} className="text-xs bg-amber-50 dark:bg-amber-900/30 rounded p-2 border border-amber-200 dark:border-amber-700">
+                              <div className="font-medium text-amber-900 dark:text-amber-200 truncate">
+                                {chunk.metadata?.title || chunk.title || `Memory ${idx + 1}`}
+                              </div>
+                              <div className="text-amber-800 dark:text-amber-300 text-xs mt-1 line-clamp-2">
+                                {chunk.content || chunk.text || 'No content'}
+                              </div>
+                              {chunk.similarity !== undefined && (
+                                <div className="text-amber-700 dark:text-amber-400 text-xs mt-1">
+                                  Similarity: {typeof chunk.similarity === 'number' ? Math.round(chunk.similarity * 100) : chunk.similarity}%
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Sources */}
                     {((selectedHistory.sources && selectedHistory.sources.length > 0) || 
                       (selectedHistory.search_results && selectedHistory.search_results.length > 0)) && (
