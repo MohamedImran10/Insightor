@@ -1,6 +1,7 @@
 """
 Gemini LLM Summarizer - Uses Google's Gemini API for intelligent summarization
 Integrated with RAG layer for memory-augmented generation
+With automatic fallback to GitHub Models (free) or Claude
 """
 
 from google import genai
@@ -8,8 +9,16 @@ from google.genai import types
 from typing import List, Dict, Any, Optional
 import logging
 import json
+import os
 
 logger = logging.getLogger(__name__)
+
+# Check if alternative API keys are available
+GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
+GITHUB_MODELS_AVAILABLE = bool(GITHUB_TOKEN)
+
+CLAUDE_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
+CLAUDE_AVAILABLE = bool(CLAUDE_API_KEY)
 
 
 class GeminiSummarizer:
@@ -83,22 +92,51 @@ class GeminiSummarizer:
             
             # Handle location restriction error gracefully
             if "User location is not supported" in error_message or "FAILED_PRECONDITION" in error_message:
-                logger.warning("⚠️ Google Gemini API location restriction detected. Using fallback summarization.")
+                logger.warning("⚠️ Google Gemini API location restriction detected.")
                 
-                try:
-                    # Fallback: Create summary from search results directly
+                # Try GitHub Models first (free tier)
+                if GITHUB_MODELS_AVAILABLE:
+                    logger.info("🔄 Attempting summarization with GitHub Models (free)...")
+                    try:
+                        return await self._summarize_with_github_models(query, search_results, rag_context)
+                    except Exception as gh_error:
+                        logger.warning(f"⚠️ GitHub Models failed: {str(gh_error)}")
+                
+                # Try Claude if GitHub Models unavailable or failed
+                if CLAUDE_AVAILABLE:
+                    logger.info("🤖 Attempting Claude API as fallback...")
+                    try:
+                        return await self._summarize_with_claude(query, search_results, rag_context)
+                    except Exception as claude_error:
+                        logger.warning(f"⚠️ Claude also failed: {str(claude_error)}. Using content extraction fallback.")
+                        return self._create_fallback_summary(query, search_results)
+                else:
+                    logger.warning("⚠️ No LLM APIs configured. Using content extraction fallback.")
                     return self._create_fallback_summary(query, search_results)
-                except Exception as fallback_error:
-                    logger.error(f"❌ Fallback summarization also failed: {str(fallback_error)}")
-                    # If fallback fails, still return a basic summary
-                    return self._create_minimal_fallback(query, search_results)
             
-            # For other errors, try fallback anyway
-            logger.warning(f"⚠️ Summarization error: {error_message}. Attempting fallback...")
+            # For other errors, try GitHub Models > Claude > fallback
+            logger.warning(f"⚠️ Summarization error: {error_message}.")
+            
+            if GITHUB_MODELS_AVAILABLE:
+                logger.info("🔄 Attempting GitHub Models...")
+                try:
+                    return await self._summarize_with_github_models(query, search_results, rag_context)
+                except Exception as gh_error:
+                    logger.warning(f"⚠️ GitHub Models failed: {str(gh_error)}")
+            
+            if CLAUDE_AVAILABLE:
+                logger.info("🤖 Attempting Claude...")
+                try:
+                    return await self._summarize_with_claude(query, search_results, rag_context)
+                except Exception as claude_error:
+                    logger.warning(f"⚠️ Claude also failed: {str(claude_error)}.")
+            
+            logger.warning("Using content extraction fallback.")
             try:
                 return self._create_fallback_summary(query, search_results)
             except:
                 return self._create_minimal_fallback(query, search_results)
+                    return self._create_minimal_fallback(query, search_results)
     
     def _prepare_content_for_summarization(self, search_results: List[Dict[str, Any]]) -> str:
         """
@@ -518,3 +556,126 @@ Format as JSON with metric name as key and value. Example: {{"Market Size": "$50
             "is_fallback": True,
             "fallback_reason": "Critical error - minimal fallback used"
         }
+    
+    async def _summarize_with_github_models(
+        self,
+        query: str,
+        search_results: List[Dict[str, Any]],
+        rag_context: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Use GitHub Models (free tier) for summarization
+        Uses gpt-4o or other open models via GitHub's API
+        Requires GITHUB_TOKEN environment variable
+        
+        Args:
+            query: Research query
+            search_results: Search results to summarize
+            rag_context: Optional memory context
+            
+        Returns:
+            Summarized research results
+        """
+        try:
+            from openai import AsyncOpenAI
+            import asyncio
+            
+            logger.info("🔄 Using GitHub Models (gpt-4o) for summarization...")
+            
+            # Initialize GitHub Models client
+            client = AsyncOpenAI(
+                base_url="https://models.inference.ai.azure.com",
+                api_key=GITHUB_TOKEN,
+            )
+            
+            # Prepare content
+            content_summary = self._prepare_content_for_summarization(search_results)
+            prompt = self._create_summarization_prompt(query, content_summary, rag_context)
+            
+            # Call GitHub Models API
+            response = await client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert AI research assistant. Provide clear, structured summaries with sections for executive summary, key findings, insights, and recommendations."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=2048,
+                top_p=0.95
+            )
+            
+            summary_text = response.choices[0].message.content
+            logger.info("✅ GitHub Models summary generated successfully")
+            
+            # Parse and structure the response
+            result = self._parse_summary_response(summary_text, search_results)
+            result["is_fallback"] = True
+            result["fallback_reason"] = "Using GitHub Models (free) instead of Gemini"
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ GitHub Models failed: {str(e)}")
+            raise
+    
+    async def _summarize_with_claude(
+        self,
+        query: str,
+        search_results: List[Dict[str, Any]],
+        rag_context: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Use Claude as an alternative LLM when Gemini fails
+        Requires ANTHROPIC_API_KEY environment variable
+        
+        Args:
+            query: Original research query
+            search_results: List of search results with cleaned content
+            rag_context: Optional retrieved context from memory
+            
+        Returns:
+            Dictionary with summary (same format as Gemini)
+        """
+        try:
+            import anthropic
+            
+            logger.info(f"🤖 Using Claude for summarization (fallback from Gemini)")
+            
+            # Prepare content for Claude
+            content_summary = self._prepare_content_for_summarization(search_results)
+            
+            # Create prompt
+            prompt = self._create_summarization_prompt(query, content_summary, rag_context)
+            
+            # Call Claude
+            client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+            
+            message = client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=2048,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            
+            summary_text = message.content[0].text
+            logger.info("✅ Claude summary generated successfully")
+            
+            # Parse and structure the response
+            result = self._parse_summary_response(summary_text, search_results)
+            result["is_claude"] = True  # Mark that Claude was used
+            
+            return result
+            
+        except ImportError:
+            logger.error("❌ Claude API not available: anthropic package not installed")
+            raise Exception("Claude API package not installed")
+        except Exception as e:
+            logger.error(f"❌ Claude summarization failed: {str(e)}")
+            raise

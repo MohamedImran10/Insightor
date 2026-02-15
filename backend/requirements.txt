@@ -6,6 +6,7 @@ httpx
 aiohttp
 google-genai
 tavily-python
+openai
 pydantic
 pydantic-settings
 beautifulsoup4
