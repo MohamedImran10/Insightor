@@ -433,16 +433,21 @@ Format as JSON with metric name as key and value. Example: {{"Market Size": "$50
                 # Limit content to first 300 characters per source
                 cleaned_contents.append(result.get("cleaned_text")[:300])
         
+        logger.info(f"📊 Fallback: Found {len(titles)} titles, {len(snippets)} snippets, {len(cleaned_contents)} cleaned contents")
+        
         # Create executive summary from top snippets
-        executive_summary = " ".join(snippets[:3])
+        executive_summary = " ".join(snippets[:3]) if snippets else " ".join(titles[:2]) if titles else f"Research results for: {query}"
+        
         if len(executive_summary) > 500:
             executive_summary = executive_summary[:500] + "..."
         
+        logger.info(f"📝 Executive summary length: {len(executive_summary)} chars")
+        
         # Key findings from titles
-        key_findings = "\n".join([f"• {title}" for title in titles[:5]])
+        key_findings = "\n".join([f"• {title}" for title in titles[:5]]) if titles else "• Research data retrieved"
         
         # Detailed analysis from cleaned content
-        detailed_analysis = "\n".join(cleaned_contents[:3])
+        detailed_analysis = "\n".join(cleaned_contents[:3]) if cleaned_contents else "Detailed analysis from search results"
         
         # Extract insights (sentences from content)
         top_insights = []
@@ -450,10 +455,12 @@ Format as JSON with metric name as key and value. Example: {{"Market Size": "$50
             sentences = [s.strip() for s in content.split('.') if len(s.strip()) > 20]
             top_insights.extend(sentences[:2])
         
-        top_insights = top_insights[:5]
+        top_insights = top_insights[:5] if top_insights else [snippet[:100] for snippet in snippets[:3]] if snippets else [query]
+        
+        logger.info(f"✅ Fallback summary created: {len(top_insights)} insights, {len(key_findings)} chars findings")
         
         return {
-            "full_summary": f"Fallback Summary for: {query}\n\n{detailed_analysis}",
+            "full_summary": f"Summary for: {query}\n\n{detailed_analysis}",
             "executive_summary": executive_summary,
             "key_findings": key_findings,
             "detailed_analysis": detailed_analysis,
@@ -481,18 +488,31 @@ Format as JSON with metric name as key and value. Example: {{"Market Size": "$50
         titles = [result.get("title", "Unknown") for result in search_results if result.get("title")]
         snippets = [result.get("snippet", "") for result in search_results if result.get("snippet")]
         
-        executive_summary = " ".join(snippets[:2]) if snippets else "Research completed"
-        if len(executive_summary) > 200:
-            executive_summary = executive_summary[:200] + "..."
+        # Build executive summary - ensure it's NEVER empty
+        if snippets:
+            executive_summary = " ".join(snippets[:2])
+        elif titles:
+            executive_summary = " ".join(titles[:2])
+        else:
+            executive_summary = f"Research completed for query: {query}"
         
-        key_findings = "\n".join([f"• {title}" for title in titles[:5]]) if titles else "• Sources retrieved"
+        if len(executive_summary) > 300:
+            executive_summary = executive_summary[:300] + "..."
+        
+        # Build key findings - ensure it's NEVER empty
+        if titles:
+            key_findings = "\n".join([f"• {title}" for title in titles[:5]])
+        else:
+            key_findings = "• Research data retrieved\n• Analysis pending"
+        
+        logger.warning(f"⚠️ Minimal fallback created: summary_len={len(executive_summary)}, findings_len={len(key_findings)}")
         
         return {
             "full_summary": executive_summary,
             "executive_summary": executive_summary,
             "key_findings": key_findings,
             "detailed_analysis": "Research data extracted from sources. Full analysis unavailable due to API limitations.",
-            "top_insights": [snippet[:100] for snippet in snippets[:3]] if snippets else [],
+            "top_insights": [snippet[:100] for snippet in snippets[:3]] if snippets else [query],
             "recommendations": "• Review the search results directly\n• More detailed analysis requires API access",
             "sources_count": len(search_results),
             "is_fallback": True,
