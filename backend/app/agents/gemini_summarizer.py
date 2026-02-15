@@ -78,8 +78,17 @@ class GeminiSummarizer:
             return result
             
         except Exception as e:
-            logger.error(f"❌ Error in summarization: {str(e)}")
-            raise Exception(f"Summarization failed: {str(e)}")
+            error_message = str(e)
+            logger.error(f"❌ Error in summarization: {error_message}")
+            
+            # Handle location restriction error gracefully
+            if "User location is not supported" in error_message or "FAILED_PRECONDITION" in error_message:
+                logger.warning("⚠️ Google Gemini API location restriction detected. Using fallback summarization.")
+                
+                # Fallback: Create summary from search results directly
+                return self._create_fallback_summary(query, search_results)
+            
+            raise Exception(f"Summarization failed: {error_message}")
     
     def _prepare_content_for_summarization(self, search_results: List[Dict[str, Any]]) -> str:
         """
@@ -385,3 +394,62 @@ Format as JSON with metric name as key and value. Example: {{"Market Size": "$50
         except Exception as e:
             logger.warning(f"Could not extract metrics: {str(e)}")
             return {}
+    
+    def _create_fallback_summary(self, query: str, search_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Create a fallback summary when Gemini API is unavailable
+        Uses simple text extraction and combination from search results
+        
+        Args:
+            query: Original research query
+            search_results: List of search results
+            
+        Returns:
+            Dictionary with fallback summary
+        """
+        logger.info("🔄 Creating fallback summary from search results")
+        
+        # Extract titles and snippets
+        titles = []
+        snippets = []
+        cleaned_contents = []
+        
+        for result in search_results:
+            if result.get("title"):
+                titles.append(result.get("title"))
+            if result.get("snippet"):
+                snippets.append(result.get("snippet"))
+            if result.get("cleaned_text"):
+                # Limit content to first 300 characters per source
+                cleaned_contents.append(result.get("cleaned_text")[:300])
+        
+        # Create executive summary from top snippets
+        executive_summary = " ".join(snippets[:3])
+        if len(executive_summary) > 500:
+            executive_summary = executive_summary[:500] + "..."
+        
+        # Key findings from titles
+        key_findings = "\n".join([f"• {title}" for title in titles[:5]])
+        
+        # Detailed analysis from cleaned content
+        detailed_analysis = "\n".join(cleaned_contents[:3])
+        
+        # Extract insights (sentences from content)
+        top_insights = []
+        for content in cleaned_contents:
+            sentences = [s.strip() for s in content.split('.') if len(s.strip()) > 20]
+            top_insights.extend(sentences[:2])
+        
+        top_insights = top_insights[:5]
+        
+        return {
+            "full_summary": f"Fallback Summary for: {query}\n\n{detailed_analysis}",
+            "executive_summary": executive_summary,
+            "key_findings": key_findings,
+            "detailed_analysis": detailed_analysis,
+            "top_insights": top_insights,
+            "recommendations": "• Further research recommended using the provided sources\n• Explore additional sources for comprehensive analysis",
+            "sources_count": len(search_results),
+            "is_fallback": True,
+            "fallback_reason": "Google Gemini API location restriction - using direct content extraction"
+        }
