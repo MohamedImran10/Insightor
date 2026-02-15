@@ -85,10 +85,20 @@ class GeminiSummarizer:
             if "User location is not supported" in error_message or "FAILED_PRECONDITION" in error_message:
                 logger.warning("⚠️ Google Gemini API location restriction detected. Using fallback summarization.")
                 
-                # Fallback: Create summary from search results directly
-                return self._create_fallback_summary(query, search_results)
+                try:
+                    # Fallback: Create summary from search results directly
+                    return self._create_fallback_summary(query, search_results)
+                except Exception as fallback_error:
+                    logger.error(f"❌ Fallback summarization also failed: {str(fallback_error)}")
+                    # If fallback fails, still return a basic summary
+                    return self._create_minimal_fallback(query, search_results)
             
-            raise Exception(f"Summarization failed: {error_message}")
+            # For other errors, try fallback anyway
+            logger.warning(f"⚠️ Summarization error: {error_message}. Attempting fallback...")
+            try:
+                return self._create_fallback_summary(query, search_results)
+            except:
+                return self._create_minimal_fallback(query, search_results)
     
     def _prepare_content_for_summarization(self, search_results: List[Dict[str, Any]]) -> str:
         """
@@ -452,4 +462,39 @@ Format as JSON with metric name as key and value. Example: {{"Market Size": "$50
             "sources_count": len(search_results),
             "is_fallback": True,
             "fallback_reason": "Google Gemini API location restriction - using direct content extraction"
+        }
+    
+    def _create_minimal_fallback(self, query: str, search_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Create a minimal fallback summary when all else fails
+        Uses only basic information from search results
+        
+        Args:
+            query: Original research query
+            search_results: List of search results
+            
+        Returns:
+            Dictionary with minimal summary
+        """
+        logger.warning("⚠️ Creating minimal fallback summary (all fallbacks exhausted)")
+        
+        titles = [result.get("title", "Unknown") for result in search_results if result.get("title")]
+        snippets = [result.get("snippet", "") for result in search_results if result.get("snippet")]
+        
+        executive_summary = " ".join(snippets[:2]) if snippets else "Research completed"
+        if len(executive_summary) > 200:
+            executive_summary = executive_summary[:200] + "..."
+        
+        key_findings = "\n".join([f"• {title}" for title in titles[:5]]) if titles else "• Sources retrieved"
+        
+        return {
+            "full_summary": executive_summary,
+            "executive_summary": executive_summary,
+            "key_findings": key_findings,
+            "detailed_analysis": "Research data extracted from sources. Full analysis unavailable due to API limitations.",
+            "top_insights": [snippet[:100] for snippet in snippets[:3]] if snippets else [],
+            "recommendations": "• Review the search results directly\n• More detailed analysis requires API access",
+            "sources_count": len(search_results),
+            "is_fallback": True,
+            "fallback_reason": "Critical error - minimal fallback used"
         }
